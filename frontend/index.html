@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MySharedBrain</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header>
+  <h1>MySharedBrain</h1>
+  <p class="tagline">Ask the librarian. Missing answers are logged, reviewed, then shelved.</p>
+</header>
+<main>
+  <section id="ask-box">
+    <h2>Ask</h2>
+    <form id="ask-form">
+      <input id="ask-input" type="text" placeholder="What do you want to know?" autocomplete="off" />
+      <button type="submit">Ask</button>
+    </form>
+    <div id="ask-result"></div>
+  </section>
+  <div class="columns">
+    <section id="notes-col">
+      <h2>Notes</h2>
+      <form id="search-form">
+        <input id="search-input" type="text" placeholder="Search names & content…" autocomplete="off" />
+      </form>
+      <ul id="notes-list"></ul>
+      <form id="new-form">
+        <input id="new-id" type="text" placeholder="new/note-id" autocomplete="off" />
+        <button type="submit">New</button>
+      </form>
+    </section>
+    <section id="editor-col">
+      <h2 id="editor-title">Select a note</h2>
+      <textarea id="editor" placeholder="Markdown content…" disabled></textarea>
+      <div class="row">
+        <button id="save-btn" disabled>Save</button>
+        <button id="move-btn" disabled>Move</button>
+        <button id="delete-btn" disabled>Delete</button>
+      </div>
+    </section>
+  </div>
+  <div class="columns">
+    <section>
+      <h2>Feedback</h2>
+      <form id="feedback-form">
+        <select id="fb-kind">
+          <option value="correction">correction</option>
+          <option value="missing">missing info</option>
+          <option value="request">request</option>
+        </select>
+        <input id="fb-note" type="text" placeholder="note id (optional)" autocomplete="off" />
+        <textarea id="fb-body" placeholder="Correct the vault, or note what's missing…"></textarea>
+        <button type="submit">Queue feedback</button>
+      </form>
+    </section>
+    <section>
+      <h2>Capture queue</h2>
+      <div class="row">
+        <button id="capture-pending">Pending</button>
+        <button id="capture-all">All</button>
+      </div>
+      <ul id="capture-list"></ul>
+    </section>
+  </div>
+  <section>
+    <h2>Audit</h2>
+    <button id="audit-reload">Reload</button>
+    <ul id="audit-list"></ul>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

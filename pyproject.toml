@@ -1,0 +1,62 @@
+[project]
+name = "mysharedbrain"
+version = "0.1.0"
+description = "MySharedBrain — AI-native markdown wiki vault: librarian agent, MCP server, feedback queue and audit log"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "hampus adamsson" }
+]
+requires-python = "==3.13.*"
+dependencies = [
+  "fastapi>=0.116.0",
+  "fastmcp>=2.0.0",
+  "uvicorn>=0.34.0",
+  "pydantic>=2.10.0",
+  "pydantic-settings>=2.6.0",
+  "structlog>=25.0.0",
+]
+
+[project.scripts]
+mysharedbrain = "mysharedbrain.__main__:main"
+
+[dependency-groups]
+dev = [
+  "basedpyright>=1.30.0",
+  "ruff>=0.9.0",
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.24.0",
+  "httpx>=0.28.0",
+  "asgi-lifespan>=2.1.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = [
+  "N818", # domain exception names like NoteNotFound / EntryAlreadyReviewed are intentional
+  "E501", # Long lines (URLs, docstrings) — not worth breaking
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mysharedbrain"]
+
+[tool.basedpyright]
+include = ["src"]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mysharedbrain"]

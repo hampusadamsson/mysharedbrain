@@ -1,0 +1,56 @@
+"""TDD: capture queue lifecycle + audit trail."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from mysharedbrain import audit, capture
+
+
+def test_submit_queues_pending_entry(vault_dir: Path) -> None:
+    entry = capture.submit(
+        vault_dir, kind="correction", body="fix ip", note_id="homelab"
+    )
+    assert entry.status == "pending"
+    assert entry.kind == "correction"
+    assert entry.id
+    assert capture.list_entries(vault_dir) == [entry]
+
+
+def test_submit_rejects_empty_body(vault_dir: Path) -> None:
+    with pytest.raises(ValueError):
+        capture.submit(vault_dir, kind="missing", body="  ")
+
+
+def test_submit_rejects_unknown_kind(vault_dir: Path) -> None:
+    with pytest.raises(ValueError):
+        capture.submit(vault_dir, kind="nope", body="x")  # type: ignore[typeddict-item]
+
+
+def test_list_entries_filters_by_status(vault_dir: Path) -> None:
+    first = capture.submit(vault_dir, kind="missing", body="need gpu docs")
+    capture.review(vault_dir, first.id, "rejected", "curator")
+    capture.submit(vault_dir, kind="request", body="what is argo?")
+    assert len(capture.list_entries(vault_dir, "pending")) == 1
+    assert len(capture.list_entries(vault_dir, "rejected")) == 1
+
+
+def test_review_rejects_unknown_and_double_review(vault_dir: Path) -> None:
+    with pytest.raises(capture.EntryNotFound):
+        capture.review(vault_dir, "missing", "applied", "curator")
+    entry = capture.submit(vault_dir, kind="request", body="q")
+    capture.review(vault_dir, entry.id, "applied", "curator", "looks right")
+    with pytest.raises(capture.EntryAlreadyReviewed):
+        capture.review(vault_dir, entry.id, "rejected", "curator")
+
+
+def test_audit_appends_and_reads_newest_first(vault_dir: Path) -> None:
+    assert audit.read_log(vault_dir) == []
+    audit.append(vault_dir, actor="mcp", action="create", note_id="a")
+    audit.append(vault_dir, actor="curator", action="update", note_id="a", detail="fix")
+    log = audit.read_log(vault_dir)
+    assert [e.action for e in log] == ["update", "create"]
+    assert log[0].actor == "curator"
+    assert all(e.ts for e in log)
