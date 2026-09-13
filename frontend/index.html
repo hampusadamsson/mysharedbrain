@@ -3,74 +3,147 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MySharedBrain</title>
+<title>MySharedBrain - Team Space</title>
 <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-<header>
-  <h1>MySharedBrain</h1>
-  <p class="tagline">Ask the librarian. Missing answers are logged, reviewed, then shelved.</p>
+<header id="topbar">
+  <div class="topbar-left">
+    <span class="app-switcher" title="App switcher">
+      <svg width="20" height="20" viewBox="0 0 20 20"><g fill="#626F86"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="16" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/><circle cx="16" cy="16" r="1.6"/></g></svg>
+    </span>
+    <span class="logo">🧠</span>
+    <span class="product">MySharedBrain</span>
+    <span class="spaces-label">Spaces</span>
+  </div>
+  <div class="topbar-center">
+    <div id="search-wrap">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16"><path fill="#626F86" d="M7 2a5 5 0 1 0 3.4 8.7l3 3 1.4-1.4-3-3A5 5 0 0 0 7 2Zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
+      <input id="global-search" type="text" placeholder="Search notes" autocomplete="off" />
+      <div id="search-results" class="hidden"></div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button id="create-btn" class="btn-primary">Create</button>
+    <span class="avatar" title="You">Y</span>
+  </div>
 </header>
-<main>
-  <section id="ask-box">
-    <h2>Ask</h2>
-    <form id="ask-form">
-      <input id="ask-input" type="text" placeholder="What do you want to know?" autocomplete="off" />
-      <button type="submit">Ask</button>
-    </form>
-    <div id="ask-result"></div>
-  </section>
-  <div class="columns">
-    <section id="notes-col">
-      <h2>Notes</h2>
-      <form id="search-form">
-        <input id="search-input" type="text" placeholder="Search names & content…" autocomplete="off" />
-      </form>
-      <ul id="notes-list"></ul>
-      <form id="new-form">
-        <input id="new-id" type="text" placeholder="new/note-id" autocomplete="off" />
-        <button type="submit">New</button>
-      </form>
-    </section>
-    <section id="editor-col">
-      <h2 id="editor-title">Select a note</h2>
-      <textarea id="editor" placeholder="Markdown content…" disabled></textarea>
-      <div class="row">
-        <button id="save-btn" disabled>Save</button>
-        <button id="move-btn" disabled>Move</button>
-        <button id="delete-btn" disabled>Delete</button>
+<div id="layout">
+  <aside id="sidebar">
+    <div class="space-header">
+      <span class="space-avatar">M</span>
+      <div>
+        <div class="space-name">MySharedBrain</div>
+        <div class="space-kind">Team space</div>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-item" data-view="pages">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M3 2h7l3 3v9H3V2Zm6 1.5V6H11.5L9 3.5ZM5 8h6v1.2H5V8Zm0 2.5h6v1.2H5v-1.2Z"/></svg>
+        Pages
+      </button>
+      <button class="nav-item" data-view="ask">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1a5.5 5.5 0 0 0-3.4 9.7c.4.3.4 1 .4 1.3H4v1h8v-1h-1c0-.3 0-1 .4-1.3A5.5 5.5 0 0 0 8 1Zm-1.5 12h3V12h-3v1Z"/></svg>
+        Ask the librarian
+      </button>
+      <button class="nav-item" data-view="capture">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M3 3h10v2H3V3Zm0 4h10v2H3V7Zm0 4h7v2H3V11Z"/></svg>
+        Capture queue <span id="capture-badge" class="badge hidden"></span>
+      </button>
+      <button class="nav-item" data-view="activity">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M8 2a6 6 0 1 0 6 6h-1.4A4.6 4.6 0 1 1 8 3.4V6l4-2.5L8 1v1Zm4.5 7H11v3.5h1.5V9Z"/></svg>
+        Activity
+      </button>
+    </nav>
+    <div class="tree-label">PAGE TREE</div>
+    <ul id="page-tree" class="tree"></ul>
+    <div class="sidebar-footer">
+      <button id="feedback-link" class="linklike">Give feedback</button>
+    </div>
+  </aside>
+  <main id="content">
+    <section id="view-pages">
+      <div id="empty-state">
+        <div class="empty-icon">📄</div>
+        <h2>Select a page, or create one</h2>
+        <p>Pages live as markdown files — flat or in folders. Ask the librarian when you can't find something.</p>
+        <button id="empty-create" class="btn-primary">Create page</button>
+      </div>
+      <div id="page-view" class="hidden">
+        <div id="breadcrumbs"></div>
+        <div class="page-header">
+          <h1 id="page-title"></h1>
+          <div class="page-actions">
+            <button id="edit-btn" class="btn-default">Edit</button>
+            <button id="save-btn" class="btn-primary hidden">Save</button>
+            <button id="cancel-btn" class="btn-subtle hidden">Cancel</button>
+            <button id="move-btn" class="btn-default">Move</button>
+            <button id="delete-btn" class="btn-danger-subtle">Delete</button>
+          </div>
+        </div>
+        <div class="byline"><span class="avatar avatar-sm">Y</span><span id="byline-text"></span></div>
+        <article id="page-render" class="wiki-body"></article>
+        <textarea id="editor" class="hidden" spellcheck="false"></textarea>
+      </div>
+      <div id="results-view" class="hidden">
+        <h1 id="results-title"></h1>
+        <ul id="results-list" class="results"></ul>
       </div>
     </section>
-  </div>
-  <div class="columns">
-    <section>
-      <h2>Feedback</h2>
-      <form id="feedback-form">
-        <select id="fb-kind">
-          <option value="correction">correction</option>
-          <option value="missing">missing info</option>
-          <option value="request">request</option>
-        </select>
-        <input id="fb-note" type="text" placeholder="note id (optional)" autocomplete="off" />
-        <textarea id="fb-body" placeholder="Correct the vault, or note what's missing…"></textarea>
-        <button type="submit">Queue feedback</button>
+    <section id="view-ask" class="hidden">
+      <h1>Ask the librarian</h1>
+      <p class="muted">Answered from the vault when possible — otherwise logged as missing information for future retrieval.</p>
+      <form id="ask-form" class="ask-hero">
+        <input id="ask-input" type="text" placeholder="What do you want to know?" autocomplete="off" />
+        <button type="submit" class="btn-primary">Ask</button>
+      </form>
+      <div id="ask-result"></div>
+      <h2>Give feedback</h2>
+      <p class="muted">Correct the vault, flag missing info, or file a request. Everything lands in the capture queue for review.</p>
+      <form id="feedback-form" class="card-form">
+        <div class="form-row">
+          <select id="fb-kind">
+            <option value="correction">Correction</option>
+            <option value="missing">Missing info</option>
+            <option value="request">Request</option>
+          </select>
+          <input id="fb-note" type="text" placeholder="Page (optional)" autocomplete="off" />
+        </div>
+        <textarea id="fb-body" placeholder="What should the librarian know?"></textarea>
+        <button type="submit" class="btn-primary">Queue feedback</button>
       </form>
     </section>
-    <section>
-      <h2>Capture queue</h2>
-      <div class="row">
-        <button id="capture-pending">Pending</button>
-        <button id="capture-all">All</button>
+    <section id="view-capture" class="hidden">
+      <div class="view-header">
+        <h1>Capture queue</h1>
+        <div class="toggle">
+          <button id="cap-pending" class="btn-default active">Pending</button>
+          <button id="cap-all" class="btn-subtle">All</button>
+        </div>
       </div>
-      <ul id="capture-list"></ul>
+      <p class="muted">Reviewed and double-checked before anything touches the vault.</p>
+      <ul id="capture-list" class="cards"></ul>
     </section>
+    <section id="view-activity" class="hidden">
+      <div class="view-header">
+        <h1>Activity</h1>
+        <button id="audit-reload" class="btn-default">Reload</button>
+      </div>
+      <ul id="audit-list" class="activity"></ul>
+    </section>
+  </main>
+</div>
+<div id="modal" class="hidden">
+  <div class="modal-box">
+    <h2 id="modal-title"></h2>
+    <p id="modal-desc" class="muted"></p>
+    <input id="modal-input" type="text" autocomplete="off" />
+    <div class="modal-actions">
+      <button id="modal-ok" class="btn-primary">Confirm</button>
+      <button id="modal-cancel" class="btn-subtle">Cancel</button>
+    </div>
   </div>
-  <section>
-    <h2>Audit</h2>
-    <button id="audit-reload">Reload</button>
-    <ul id="audit-list"></ul>
-  </section>
-</main>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>
