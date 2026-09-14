@@ -66,6 +66,18 @@ def test_process_capture_can_create_missing_note(vault_dir: Path) -> None:
     assert lib.read_note("gpu").content == "# GPU\n"
 
 
+def test_process_capture_approve_endorses_without_vault_change(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("homelab", "old ip")
+    entry = lib.give_feedback("request", "fetch new ip", note_id="homelab")
+    reviewed = lib.process_capture(
+        entry.id, "approved", "curator", review_note="valid, fetch later"
+    )
+    assert reviewed.status == "approved"
+    assert lib.read_note("homelab").content == "old ip"
+    assert "capture-approved" in [e.action for e in audit.read_log(vault_dir)]
+
+
 def test_process_capture_reject_leaves_vault_alone(vault_dir: Path) -> None:
     lib = Librarian(vault_dir)
     lib.create_note("homelab", "old ip")

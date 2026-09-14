@@ -215,6 +215,7 @@ ul.cards { list-style: none; padding: 0; max-width: 760px; }
 .lozenge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 8px; text-transform: uppercase; }
 .lozenge.pending { background: var(--ds-background-selected); color: var(--ds-link); }
 .lozenge.applied { background: var(--ds-success-bg); color: var(--ds-success); }
+.lozenge.approved { background: #e6fcff; color: #006e9c; }
 .lozenge.rejected { background: var(--ds-background-neutral); color: var(--ds-text-subtle); }
 .lozenge.request, .lozenge.correction, .lozenge.missing { background: var(--ds-warning-bg); color: var(--ds-warning); }
 .card-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }

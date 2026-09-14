@@ -21,7 +21,7 @@ Mutations flow through one audited service layer, exposed to agents via **MCP**.
 ```
 src/mysharedbrain/   backend (uv · Python 3.13 · FastAPI · FastMCP)
   vault.py           CRUD + move + ripgrep search over markdown files
-  capture.py         feedback queue (pending → applied/rejected)
+  capture.py         feedback queue (pending → applied/approved/rejected)
   audit.py           append-only JSONL audit log (like git log)
   service.py         the librarian: single audited mutation path
   app.py             REST API + serves the UI

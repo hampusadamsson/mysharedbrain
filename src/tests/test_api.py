@@ -75,6 +75,20 @@ def test_feedback_capture_review_flow(vault_dir: Path) -> None:
     )
 
 
+def test_capture_approve_flow(vault_dir: Path) -> None:
+    c = client(vault_dir)
+    entry_id = c.post(
+        "/api/feedback", json={"kind": "request", "body": "need x"}
+    ).json()["id"]
+    reviewed = c.post(
+        f"/api/capture/{entry_id}/review",
+        json={"verdict": "approved", "reviewer": "curator"},
+    ).json()
+    assert reviewed["status"] == "approved"
+    entries = c.get("/api/capture", params={"status": "approved"}).json()["entries"]
+    assert [e["id"] for e in entries] == [entry_id]
+
+
 def test_request_found_and_missing(vault_dir: Path) -> None:
     c = client(vault_dir)
     c.post("/api/notes", json={"id": "homelab", "content": "k3s"})

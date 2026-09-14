@@ -102,7 +102,8 @@ class Librarian:
         """Review one queue entry (double-check) before it updates the vault.
 
         ``applied`` with ``content`` upserts the entry's ``note_id``;
-        ``rejected`` only records the verdict. Both paths are audited.
+        ``approved`` endorses the entry without touching the vault;
+        ``rejected`` only records the verdict. All paths are audited.
         """
         pending = [
             e for e in capture.list_entries(self.root, "pending") if e.id == entry_id

@@ -1,8 +1,9 @@
 """Capture queue: the feedback inbox.
 
 Corrections, missing-information notes and requests land here as ``pending``
-entries. The librarian reviews each one (double-check) before it touches the
-vault — ``applied`` or ``rejected``, never silently dropped.
+entries. The librarian reviews each one (double-check) — ``applied`` (vault
+updated), ``approved`` (endorsed, no vault change needed) or ``rejected`` —
+never silently dropped.
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ from typing import Literal
 CAPTURE_FILE = Path(".brain/capture.jsonl")
 
 Kind = Literal["correction", "missing", "request"]
-Status = Literal["pending", "applied", "rejected"]
-Verdict = Literal["applied", "rejected"]
+Status = Literal["pending", "applied", "approved", "rejected"]
+Verdict = Literal["applied", "approved", "rejected"]
 
 
 @dataclass
@@ -96,9 +97,9 @@ class EntryAlreadyReviewed(Exception):
 def review(
     root: Path, entry_id: str, verdict: Verdict, reviewer: str, review_note: str = ""
 ) -> FeedbackEntry:
-    """Mark a pending entry as applied/rejected. The vault change itself is
-    performed by the caller (librarian) before/after this call."""
-    if verdict not in ("applied", "rejected"):
+    """Mark a pending entry as applied/approved/rejected. The vault change
+    itself (applied only) is performed by the caller (librarian)."""
+    if verdict not in ("applied", "approved", "rejected"):
         raise ValueError(f"unknown verdict: {verdict!r}")
     entries = _read_all(root)
     for entry in entries:

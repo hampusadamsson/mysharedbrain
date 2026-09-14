@@ -118,8 +118,11 @@
       <div class="view-header">
         <h1>Capture queue</h1>
         <div class="toggle">
-          <button id="cap-pending" class="btn-default active">Pending</button>
-          <button id="cap-all" class="btn-subtle">All</button>
+          <button class="btn-default cap-filter active" data-status="pending">Pending</button>
+          <button class="btn-subtle cap-filter" data-status="applied">Applied</button>
+          <button class="btn-subtle cap-filter" data-status="approved">Approved</button>
+          <button class="btn-subtle cap-filter" data-status="rejected">Rejected</button>
+          <button class="btn-subtle cap-filter" data-status="all">All</button>
         </div>
       </div>
       <p class="muted">Reviewed and double-checked before anything touches the vault.</p>

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from mysharedbrain import capture
 from mysharedbrain.app import librarian
 from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound
 
@@ -86,6 +87,27 @@ def give_feedback(kind: str, body: str, note_id: str = "") -> dict[str, str]:
     try:
         entry = librarian(actor="mcp").give_feedback(kind, body, note_id)  # type: ignore[arg-type]
     except ValueError as exc:
+        return {"ok": "false", "error": str(exc)}
+    return {"ok": "true", "id": entry.id, "status": entry.status}
+
+
+@mcp.tool
+def review_capture(
+    entry_id: str,
+    verdict: str,
+    reviewer: str = "mcp",
+    content: str | None = None,
+    review_note: str = "",
+) -> dict[str, str]:
+    """Review a capture queue entry: applied (upserts the note with content),
+    approved (endorsed, no vault change) or rejected."""
+    if verdict not in ("applied", "approved", "rejected"):
+        return {"ok": "false", "error": f"unknown verdict: {verdict!r}"}
+    try:
+        entry = librarian(actor="mcp").process_capture(
+            entry_id, verdict, reviewer, content, review_note
+        )
+    except (capture.EntryNotFound, capture.EntryAlreadyReviewed, ValueError) as exc:
         return {"ok": "false", "error": str(exc)}
     return {"ok": "true", "id": entry.id, "status": entry.status}
 

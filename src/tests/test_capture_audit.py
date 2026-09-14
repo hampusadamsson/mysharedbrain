@@ -37,6 +37,15 @@ def test_list_entries_filters_by_status(vault_dir: Path) -> None:
     assert len(capture.list_entries(vault_dir, "rejected")) == 1
 
 
+def test_review_supports_approved_verdict(vault_dir: Path) -> None:
+    entry = capture.submit(vault_dir, kind="request", body="fetch x")
+    reviewed = capture.review(
+        vault_dir, entry.id, "approved", "curator", "valid, fetch later"
+    )
+    assert reviewed.status == "approved"
+    assert capture.list_entries(vault_dir, "approved") == [reviewed]
+
+
 def test_review_rejects_unknown_and_double_review(vault_dir: Path) -> None:
     with pytest.raises(capture.EntryNotFound):
         capture.review(vault_dir, "missing", "applied", "curator")

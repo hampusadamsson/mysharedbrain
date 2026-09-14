@@ -471,18 +471,18 @@ $("feedback-form").addEventListener("submit", async (ev) => {
 });
 
 /* ---------- capture ---------- */
-$("cap-pending").addEventListener("click", () => {
-  captureFilter = "pending";
-  $("cap-pending").classList.add("active");
-  $("cap-all").classList.remove("active");
-  refreshCapture();
-});
-$("cap-all").addEventListener("click", () => {
-  captureFilter = "all";
-  $("cap-all").classList.add("active");
-  $("cap-pending").classList.remove("active");
-  refreshCapture();
-});
+for (const btn of document.querySelectorAll(".cap-filter")) {
+  btn.addEventListener("click", () => {
+    captureFilter = btn.dataset.status;
+    for (const other of document.querySelectorAll(".cap-filter")) {
+      const on = other === btn;
+      other.classList.toggle("active", on);
+      other.classList.toggle("btn-default", on);
+      other.classList.toggle("btn-subtle", !on);
+    }
+    refreshCapture();
+  });
+}
 async function updateBadge() {
   const { entries } = await api.get("/api/capture?status=pending");
   const badge = $("capture-badge");
@@ -490,7 +490,7 @@ async function updateBadge() {
   badge.classList.toggle("hidden", entries.length === 0);
 }
 async function refreshCapture() {
-  const params = captureFilter === "pending" ? "?status=pending" : "";
+  const params = captureFilter === "all" ? "" : `?status=${captureFilter}`;
   const { entries } = await api.get(`/api/capture${params}`);
   const list = $("capture-list");
   list.innerHTML = "";
@@ -542,6 +542,14 @@ async function refreshCapture() {
         updateBadge();
         renderTree();
       });
+      const approve = document.createElement("button");
+      approve.className = "btn-default";
+      approve.textContent = "Approve";
+      approve.addEventListener("click", async () => {
+        await api.send(`/api/capture/${e.id}/review`, "POST", { verdict: "approved", reviewer: "ui" });
+        refreshCapture();
+        updateBadge();
+      });
       const no = document.createElement("button");
       no.className = "btn-default";
       no.textContent = "Reject";
@@ -551,6 +559,7 @@ async function refreshCapture() {
         updateBadge();
       });
       row.appendChild(ok);
+      row.appendChild(approve);
       row.appendChild(no);
       li.appendChild(row);
     }
