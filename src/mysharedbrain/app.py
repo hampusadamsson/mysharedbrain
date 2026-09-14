@@ -186,6 +186,14 @@ def create_app() -> FastAPI:
         def index() -> FileResponse:
             return FileResponse(str(FRONTEND_DIR / "index.html"))
 
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def spa_fallback(full_path: str) -> FileResponse:
+            # Unique page/view URLs (e.g. /p/<id>, /ask) all boot the SPA;
+            # API, health, docs and static routes above take precedence.
+            if full_path == "api" or full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            return FileResponse(str(FRONTEND_DIR / "index.html"))
+
     return app
 
 

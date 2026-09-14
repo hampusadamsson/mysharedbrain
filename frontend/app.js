@@ -137,10 +137,46 @@ function showView(name) {
   if (name === "capture") refreshCapture();
   if (name === "activity") refreshAudit();
 }
-for (const btn of document.querySelectorAll(".nav-item")) {
-  btn.addEventListener("click", () => showView(btn.dataset.view));
+const VIEW_PATHS = { pages: "/", ask: "/ask", capture: "/capture", activity: "/activity" };
+function pageUrl(id) {
+  return "/p/" + id.split("/").map(encodeURIComponent).join("/");
 }
-$("feedback-link").addEventListener("click", () => showView("ask"));
+function syncUrl(path, title) {
+  if (location.pathname === path) history.replaceState({}, "", path);
+  else history.pushState({}, "", path);
+  if (title) document.title = `${title} - MySharedBrain`;
+}
+function navTo(view) {
+  showView(view);
+  syncUrl(VIEW_PATHS[view], null);
+}
+function goHome() {
+  currentId = null;
+  editing = false;
+  syncUrl("/", null);
+  document.title = "MySharedBrain - Team Space";
+  showView("pages");
+  $("empty-state").classList.remove("hidden");
+  $("page-view").classList.add("hidden");
+  $("results-view").classList.add("hidden");
+  renderTree();
+}
+function route() {
+  const path = location.pathname;
+  if (path === "/ask") return showView("ask");
+  if (path === "/capture") return showView("capture");
+  if (path === "/activity") return showView("activity");
+  const m = path.match(/^\/p\/(.+)$/);
+  if (m) {
+    const id = m[1].split("/").map(decodeURIComponent).join("/");
+    return openPath(id).catch(() => goHome());
+  }
+  goHome();
+}
+for (const btn of document.querySelectorAll(".nav-item")) {
+  btn.addEventListener("click", () => navTo(btn.dataset.view));
+}
+$("feedback-link").addEventListener("click", () => navTo("ask"));
 
 /* ---------- page tree (full project view; folders remember collapse) ---------- */
 const collapsed = new Set();
@@ -259,7 +295,8 @@ function renderCrumbs(box, id) {
     const s = document.createElement("span");
     s.className = "crumb";
     s.textContent = label;
-    if (target) s.addEventListener("click", () => openPath(target));
+    if (i === 0) s.addEventListener("click", () => goHome());
+    else if (target) s.addEventListener("click", () => openPath(target));
     box.appendChild(s);
   });
 }
@@ -301,6 +338,7 @@ async function showFolder(folder, knownNotes) {
   $("page-view").classList.add("hidden");
   $("results-view").classList.remove("hidden");
   folderCrumbs(folder);
+  syncUrl(pageUrl(folder), folder.split("/").pop() || folder);
   $("results-title").textContent = folder.split("/").pop() || folder;
   const list = $("results-list");
   list.innerHTML = "";
@@ -333,6 +371,7 @@ async function openNote(id) {
   $("edit-btn").classList.remove("hidden");
   $("save-btn").classList.add("hidden");
   $("cancel-btn").classList.add("hidden");
+  syncUrl(pageUrl(note.id), note.id.split("/").pop());
   showView("pages");
   renderTree();
 }
@@ -666,6 +705,6 @@ function createPage() {
 $("create-btn").addEventListener("click", createPage);
 $("empty-create").addEventListener("click", createPage);
 
-showView("pages");
-renderTree();
+window.addEventListener("popstate", route);
+route();
 updateBadge();

@@ -111,6 +111,15 @@ def test_audit_records_mutations(vault_dir: Path) -> None:
     assert entries[0]["note_id"] == "a"
 
 
+def test_spa_fallback_serves_index_for_page_and_view_urls(vault_dir: Path) -> None:
+    c = client(vault_dir)
+    for path in ("/p/projects/homelab", "/ask", "/capture", "/activity"):
+        r = c.get(path)
+        assert r.status_code == 200
+        assert "MySharedBrain" in r.text
+    assert c.get("/api/no-such-endpoint").status_code == 404
+
+
 def test_invalid_id_rejected(vault_dir: Path) -> None:
     c = client(vault_dir)
     assert (
