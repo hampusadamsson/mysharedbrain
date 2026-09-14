@@ -124,7 +124,12 @@ function timeAgo(ts) {
 
 /* ---------- view switching ---------- */
 const VIEWS = ["pages", "ask", "capture", "activity"];
+function closeDrawer() {
+  $("sidebar").classList.remove("open");
+  $("scrim").classList.add("hidden");
+}
 function showView(name) {
+  closeDrawer();
   for (const v of VIEWS) {
     $(`view-${v}`).classList.toggle("hidden", v !== name);
     document.querySelector(`.nav-item[data-view="${v}"]`).classList.toggle("active", v === name);
@@ -153,13 +158,20 @@ function buildTree(ids) {
   }
   return root;
 }
+const TREE_PAGE_SIZE = 50;
+let treeTopLimit = TREE_PAGE_SIZE;
+const folderLimits = {};
 function renderTree() {
   const tree = $("page-tree");
   tree.innerHTML = "";
   api.get("/api/notes").then(({ notes }) => {
     const nested = buildTree(notes);
+    const countLabel = document.querySelector(".tree-label");
+    if (countLabel) countLabel.textContent = `PAGE TREE · ${notes.length}`;
     const draw = (node, prefix, parent) => {
-      for (const key of Object.keys(node).sort()) {
+      const keys = Object.keys(node).sort();
+      const limit = prefix === "" ? treeTopLimit : folderLimits[prefix] || TREE_PAGE_SIZE;
+      for (const key of keys.slice(0, limit)) {
         const full = prefix ? `${prefix}/${key}` : key;
         const isPage = notes.includes(full);
         const hasKids = Object.keys(node[key]).length > 0;
@@ -204,6 +216,20 @@ function renderTree() {
         li.appendChild(row);
         li.appendChild(kids);
         parent.appendChild(li);
+      }
+      if (keys.length > limit) {
+        const more = document.createElement("li");
+        more.className = "tree-more";
+        const btn = document.createElement("button");
+        btn.className = "linklike";
+        btn.textContent = `Show more (${keys.length - limit} of ${keys.length})`;
+        btn.addEventListener("click", () => {
+          if (prefix === "") treeTopLimit += TREE_PAGE_SIZE;
+          else folderLimits[prefix] = limit + TREE_PAGE_SIZE;
+          renderTree();
+        });
+        more.appendChild(btn);
+        parent.appendChild(more);
       }
     };
     if (notes.length === 0) {
