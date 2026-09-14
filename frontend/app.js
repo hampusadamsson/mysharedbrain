@@ -90,9 +90,9 @@ function renderMarkdown(src) {
       html += "<hr>";
       continue;
     }
-    if (/^&gt;|^>/.test(line) || t.startsWith("&gt;")) {
+    if (/^>\s?/.test(t)) {
       closeList();
-      html += `<blockquote>${inlineMd(t.replace(/^&gt;|>‌?/, "").replace(/^>\s?/, ""))}</blockquote>`;
+      html += `<blockquote>${inlineMd(t.replace(/^>\s?/, ""))}</blockquote>`;
       continue;
     }
     const ul = t.match(/^[-*]\s+(.*)/);
@@ -137,7 +137,14 @@ for (const btn of document.querySelectorAll(".nav-item")) {
 }
 $("feedback-link").addEventListener("click", () => showView("ask"));
 
-/* ---------- page tree ---------- */
+/* ---------- page tree (full project view; folders remember collapse) ---------- */
+const collapsed = new Set();
+function treeIsOpen(full) {
+  if (collapsed.has(full)) {
+    return !!currentId && (currentId === full || currentId.startsWith(full + "/"));
+  }
+  return true;
+}
 function buildTree(ids) {
   const root = {};
   for (const id of ids) {
@@ -171,11 +178,14 @@ function renderTree() {
         label.appendChild(document.createTextNode(" " + (isPage ? key : `${key}/`)));
         label.title = full;
         const kids = document.createElement("ul");
-        kids.classList.add("hidden");
         if (hasKids) {
+          const open = treeIsOpen(full);
+          if (!open) kids.classList.add("hidden");
+          caret.textContent = open ? "▼" : "▶";
           caret.addEventListener("click", () => {
-            const open = kids.classList.toggle("hidden");
-            caret.textContent = open ? "▶" : "▼";
+            if (collapsed.has(full)) collapsed.delete(full);
+            else collapsed.add(full);
+            renderTree();
           });
           draw(node[key], full, kids);
         }
@@ -185,8 +195,8 @@ function renderTree() {
         } else {
           label.style.color = "var(--ds-text-subtle)";
           label.addEventListener("click", () => {
-            const open = kids.classList.toggle("hidden");
-            caret.textContent = open ? "▶" : "▼";
+            collapsed.delete(full);
+            showFolder(full);
           });
         }
         row.appendChild(caret);
@@ -208,8 +218,7 @@ function renderTree() {
 }
 
 /* ---------- page view ---------- */
-function breadcrumbs(id) {
-  const box = $("breadcrumbs");
+function renderCrumbs(box, id) {
   box.innerHTML = "";
   const parts = id.split("/");
   const crumbs = [["MySharedBrain", null]];
@@ -224,9 +233,62 @@ function breadcrumbs(id) {
     const s = document.createElement("span");
     s.className = "crumb";
     s.textContent = label;
-    if (target) s.addEventListener("click", () => openNote(target));
+    if (target) s.addEventListener("click", () => openPath(target));
     box.appendChild(s);
   });
+}
+function breadcrumbs(id) {
+  renderCrumbs($("breadcrumbs"), id);
+}
+function folderCrumbs(id) {
+  const el = $("folder-crumbs");
+  el.innerHTML = "";
+  if (id) renderCrumbs(el, id);
+}
+async function openPath(path) {
+  try {
+    await openNote(path);
+    return;
+  } catch {
+    // not a note — maybe a folder
+  }
+  const { notes } = await api.get("/api/notes");
+  if (notes.some((n) => n === path || n.startsWith(path + "/"))) {
+    await showFolder(path, notes);
+    return;
+  }
+  showResults(path);
+}
+async function showFolder(folder, knownNotes) {
+  const notes = knownNotes || (await api.get("/api/notes")).notes;
+  const direct = new Map();
+  for (const n of notes) {
+    if (n !== folder && !n.startsWith(folder + "/")) continue;
+    const rest = n === folder ? "" : n.slice(folder.length + 1);
+    if (!rest) continue;
+    const seg = rest.split("/")[0];
+    if (!direct.has(seg)) direct.set(seg, rest.includes("/") ? "folder" : "page");
+  }
+  collapsed.delete(folder);
+  showView("pages");
+  $("empty-state").classList.add("hidden");
+  $("page-view").classList.add("hidden");
+  $("results-view").classList.remove("hidden");
+  folderCrumbs(folder);
+  $("results-title").textContent = folder.split("/").pop() || folder;
+  const list = $("results-list");
+  list.innerHTML = "";
+  if (!direct.size) list.innerHTML = "<li class='muted'>Empty folder.</li>";
+  for (const [seg, kind] of [...direct.entries()].sort()) {
+    const li = document.createElement("li");
+    const title = document.createElement("div");
+    title.className = "res-title";
+    title.textContent = (kind === "folder" ? "\uD83D\uDCC1 " : "\uD83D\uDCC4 ") + seg;
+    li.appendChild(title);
+    li.addEventListener("click", () => openPath(folder + "/" + seg));
+    list.appendChild(li);
+  }
+  renderTree();
 }
 async function openNote(id) {
   const note = await api.get(`/api/notes/${encodeURIComponent(id)}`);
@@ -250,7 +312,7 @@ async function openNote(id) {
 }
 $("page-render").addEventListener("click", (ev) => {
   const t = ev.target.closest(".wiki-link");
-  if (t) openNote(t.dataset.target).catch(() => showResults(t.dataset.target));
+  if (t) openNote(t.dataset.target).catch(() => openPath(t.dataset.target));
 });
 function setEditing(on) {
   editing = on;
@@ -264,10 +326,8 @@ function setEditing(on) {
 $("edit-btn").addEventListener("click", () => setEditing(true));
 $("cancel-btn").addEventListener("click", () => setEditing(false));
 $("save-btn").addEventListener("click", async () => {
-  const note = await api.send(`/api/notes/${encodeURIComponent(currentId)}`, "PUT", { content: $("editor").value });
-  $("editor").value = note.content;
-  $("page-render").innerHTML = renderMarkdown(note.content || "*Empty page.*");
-  setEditing(false);
+  await api.send(`/api/notes/${encodeURIComponent(currentId)}`, "PUT", { content: $("editor").value });
+  await openNote(currentId); // stay on the page, re-rendered from server state
 });
 $("delete-btn").addEventListener("click", async () => {
   openModal("Delete page?", `“${currentId}” will be removed from the vault. This is audited.`, "", "Delete", async () => {
@@ -346,6 +406,7 @@ async function showResults(q) {
   $("empty-state").classList.add("hidden");
   $("page-view").classList.add("hidden");
   $("results-view").classList.remove("hidden");
+  folderCrumbs("");
   $("results-title").textContent = `Search results for “${q}”`;
   const list = $("results-list");
   list.innerHTML = "";

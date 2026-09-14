@@ -164,7 +164,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 /* ---- content ---- */
 #content { flex: 1; padding: 24px 40px 80px; max-width: 980px; }
 #content h1 { font-size: 26px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
-#breadcrumbs { color: var(--ds-text-subtle); font-size: 13px; margin-bottom: 6px; }
+#breadcrumbs, #folder-crumbs { color: var(--ds-text-subtle); font-size: 13px; margin-bottom: 6px; }
 #breadcrumbs .crumb { cursor: pointer; }
 #breadcrumbs .crumb:hover { text-decoration: underline; }
 #breadcrumbs .sep { margin: 0 6px; color: var(--ds-text-subtlest); }
