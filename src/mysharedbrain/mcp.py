@@ -167,9 +167,23 @@ def recent_changes(limit: int = 20) -> dict[str, object]:
 
 
 @mcp.tool
-def search_notes(query: str, limit: int = 20) -> dict[str, object]:
+def list_capture(status: str | None = None) -> dict[str, object]:
+    """List capture queue entries, optionally filtered by status."""
+    if status is not None and status not in (
+        "pending",
+        "applied",
+        "approved",
+        "rejected",
+    ):
+        return {"error": f"unknown status: {status!r}"}
+    entries = librarian(actor="mcp").list_capture(status)  # type: ignore[arg-type]
+    return {"entries": [e.__dict__ for e in entries]}
+
+
+@mcp.tool
+def search_notes(query: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
     """Search notes by name and content (ripgrep)."""
-    result = librarian(actor="mcp").search(query, limit)
+    result = librarian(actor="mcp").search(query, limit, offset)
     return {
         "names": result["names"],
         "content": [{"id": h.id, "excerpts": h.excerpts} for h in result["content"]],

@@ -60,6 +60,10 @@ async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
     assert rev == {"ok": "true", "id": fb["id"], "status": "approved"}
     dup = await call("review_capture", {"entry_id": fb["id"], "verdict": "rejected"})
     assert dup["ok"] == "false"
+    listed = await call("list_capture", {"status": "approved"})
+    found_ids = [e["id"] for e in cast("list[dict[str, str]]", listed["entries"])]
+    assert fb["id"] in found_ids
+    assert "error" in await call("list_capture", {"status": "bogus"})
     found = await call("ask_question", {"question": "elitedesk"})
     assert found["found"] is True
     missing = await call("ask_question", {"question": "absent topic xyz"})

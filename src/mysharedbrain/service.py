@@ -140,6 +140,9 @@ class Librarian:
         )
 
     # -- feedback / capture --------------------------------------------------
+    def list_capture(self, status: capture.Status | None = None) -> list[FeedbackEntry]:
+        return capture.list_entries(self.root, status)
+
     def give_feedback(
         self, kind: capture.Kind, body: str, note_id: str = ""
     ) -> FeedbackEntry:

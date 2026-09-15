@@ -61,6 +61,7 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 | `get_frontmatter` / `set_frontmatter` | Read/merge YAML frontmatter |
 | `get_backlinks` / `get_outgoing` | `[[Link]]` graph neighbors |
 | `recent_changes` | Latest audited changes, newest first |
+| `list_capture` | List queue entries (optional status filter) |
 | `give_feedback` | Queue an edit · flag missing info · file a request |
 | `review_capture` | Review queue entry: applied/approved/rejected |
 | `ask_question` | Ask the librarian; misses are logged for future retrieval |
