@@ -47,10 +47,10 @@ def test_ask_rejects_empty_question(vault_dir: Path) -> None:
         Librarian(vault_dir).ask("  ")
 
 
-def test_process_capture_applies_correction_to_vault(vault_dir: Path) -> None:
+def test_process_capture_applies_edit_to_vault(vault_dir: Path) -> None:
     lib = Librarian(vault_dir)
     lib.create_note("homelab", "old ip")
-    entry = lib.give_feedback("correction", "new ip is 10.0.0.2", note_id="homelab")
+    entry = lib.give_feedback("edit", "new ip is 10.0.0.2", note_id="homelab")
     reviewed = lib.process_capture(
         entry.id, "applied", "curator", content="new ip is 10.0.0.2"
     )
@@ -81,7 +81,7 @@ def test_process_capture_approve_endorses_without_vault_change(vault_dir: Path) 
 def test_process_capture_reject_leaves_vault_alone(vault_dir: Path) -> None:
     lib = Librarian(vault_dir)
     lib.create_note("homelab", "old ip")
-    entry = lib.give_feedback("correction", "bogus", note_id="homelab")
+    entry = lib.give_feedback("edit", "bogus", note_id="homelab")
     reviewed = lib.process_capture(entry.id, "rejected", "curator", review_note="wrong")
     assert reviewed.status == "rejected"
     assert lib.read_note("homelab").content == "old ip"

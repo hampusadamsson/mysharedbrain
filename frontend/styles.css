@@ -219,7 +219,7 @@ ul.cards { list-style: none; padding: 0; max-width: 760px; }
 .lozenge.applied { background: var(--ds-success-bg); color: var(--ds-success); }
 .lozenge.approved { background: #e6fcff; color: #006e9c; }
 .lozenge.rejected { background: var(--ds-background-neutral); color: var(--ds-text-subtle); }
-.lozenge.request, .lozenge.correction, .lozenge.missing { background: var(--ds-warning-bg); color: var(--ds-warning); }
+.lozenge.request, .lozenge.edit, .lozenge.correction, .lozenge.missing { background: var(--ds-warning-bg); color: var(--ds-warning); }
 .card-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
 .card-body { margin: 6px 0; white-space: pre-wrap; }
 .card-meta { color: var(--ds-text-subtlest); font-size: 12px; }

@@ -10,11 +10,9 @@ from mysharedbrain import audit, capture
 
 
 def test_submit_queues_pending_entry(vault_dir: Path) -> None:
-    entry = capture.submit(
-        vault_dir, kind="correction", body="fix ip", note_id="homelab"
-    )
+    entry = capture.submit(vault_dir, kind="edit", body="fix ip", note_id="homelab")
     assert entry.status == "pending"
-    assert entry.kind == "correction"
+    assert entry.kind == "edit"
     assert entry.id
     assert capture.list_entries(vault_dir) == [entry]
 
@@ -27,6 +25,9 @@ def test_submit_rejects_empty_body(vault_dir: Path) -> None:
 def test_submit_rejects_unknown_kind(vault_dir: Path) -> None:
     with pytest.raises(ValueError):
         capture.submit(vault_dir, kind="nope", body="x")  # type: ignore[typeddict-item]
+    with pytest.raises(ValueError):
+        # old name for the "edit" kind
+        capture.submit(vault_dir, kind="correction", body="x")  # type: ignore[typeddict-item]
 
 
 def test_list_entries_filters_by_status(vault_dir: Path) -> None:

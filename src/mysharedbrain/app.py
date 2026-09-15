@@ -44,7 +44,7 @@ class MoveIn(BaseModel):
 
 
 class FeedbackIn(BaseModel):
-    kind: capture.Kind = "correction"
+    kind: capture.Kind = "edit"
     body: str
     note_id: str = ""
 

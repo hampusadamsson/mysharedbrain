@@ -17,7 +17,7 @@ from typing import Literal
 
 CAPTURE_FILE = Path(".brain/capture.jsonl")
 
-Kind = Literal["correction", "missing", "request"]
+Kind = Literal["edit", "missing", "request"]
 Status = Literal["pending", "applied", "approved", "rejected"]
 Verdict = Literal["applied", "approved", "rejected"]
 
@@ -62,7 +62,7 @@ def submit(root: Path, *, kind: Kind, body: str, note_id: str = "") -> FeedbackE
     """Queue a new feedback entry as ``pending``."""
     if not body.strip():
         raise ValueError("feedback body must not be empty")
-    if kind not in ("correction", "missing", "request"):
+    if kind not in ("edit", "missing", "request"):
         raise ValueError(f"unknown feedback kind: {kind!r}")
     entry = FeedbackEntry(
         id=uuid.uuid4().hex[:12],

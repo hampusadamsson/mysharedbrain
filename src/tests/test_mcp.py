@@ -48,7 +48,7 @@ async def test_mcp_crud_and_search(vault_dir: Path) -> None:
 async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
     await call("create_note", {"note_id": "homelab", "content": "k3s on elitedesk"})
     fb = await call(
-        "give_feedback", {"kind": "correction", "body": "new ip", "note_id": "homelab"}
+        "give_feedback", {"kind": "edit", "body": "new ip", "note_id": "homelab"}
     )
     assert fb == {"ok": "true", "id": fb["id"], "status": "pending"}
     bad = await call("give_feedback", {"kind": "bogus", "body": "x"})

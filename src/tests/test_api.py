@@ -54,7 +54,7 @@ def test_feedback_capture_review_flow(vault_dir: Path) -> None:
     c.post("/api/notes", json={"id": "homelab", "content": "old"})
     entry_id = c.post(
         "/api/feedback",
-        json={"kind": "correction", "body": "new", "note_id": "homelab"},
+        json={"kind": "edit", "body": "new", "note_id": "homelab"},
     ).json()["id"]
     assert c.get("/api/capture").json()["entries"][0]["status"] == "pending"
     reviewed = c.post(

@@ -1,7 +1,7 @@
 """MCP server: the only remote mutation path into the vault.
 
 Tools: create / read / update / delete / move notes, ripgrep search,
-feedback (corrections, missing info, requests) and questions. Every tool
+feedback (edits, missing info, requests) and questions. Every tool
 delegates to :class:`Librarian`, so every change is audited.
 """
 
@@ -82,7 +82,7 @@ def search_notes(query: str, limit: int = 20) -> dict[str, object]:
 def give_feedback(kind: str, body: str, note_id: str = "") -> dict[str, str]:
     """Queue feedback: correct info, flag missing info, or file a request.
 
-    kind is one of: correction | missing | request.
+    kind is one of: edit | missing | request.
     """
     try:
         entry = librarian(actor="mcp").give_feedback(kind, body, note_id)  # type: ignore[arg-type]

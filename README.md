@@ -11,7 +11,7 @@ nested.
 Think of it as a **librarian**: ask for information and it is presented when
 available; missing information is **logged for future action** so the librarian
 can retrieve it later. The **feedback** function is the improvement queue —
-corrections, missing-info notes, requests. In increments the librarian
+edits, missing-info notes, requests. In increments the librarian
 **processes the capture queue** (reviewed and double-checked) before updating
 the vault. All changes to the vault and the queue are **audited** (like git).
 Mutations flow through one audited service layer, exposed to agents via **MCP**.
