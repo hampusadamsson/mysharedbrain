@@ -65,3 +65,64 @@ async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
     missing = await call("ask_question", {"question": "absent topic xyz"})
     assert missing["found"] is False
     assert missing["entry_id"]
+
+
+async def test_mcp_obsidian_parity_tools(vault_dir: Path) -> None:
+    await call(
+        "create_note",
+        {"note_id": "doc", "content": "## A\nold\n\n## Links\nSee [[other]]."},
+    )
+    await call("create_note", {"note_id": "other", "content": "o"})
+    assert await call("append_note", {"note_id": "doc", "content": "tail"}) == {
+        "ok": "true",
+        "id": "doc",
+    }
+    assert (await call("append_note", {"note_id": "gone", "content": "x"}))[
+        "ok"
+    ] == "false"
+    assert await call(
+        "patch_note", {"note_id": "doc", "heading": "A", "content": "new"}
+    ) == {
+        "ok": "true",
+        "id": "doc",
+    }
+    no_section = await call(
+        "patch_note", {"note_id": "doc", "heading": "Nope", "content": "x"}
+    )
+    assert no_section["ok"] == "false"
+    assert await call("list_notes", {"limit": 1}) == {"notes": ["doc"]}
+    batch = await call("read_notes", {"note_ids": ["doc", "gone"]})
+    found = cast("list[dict[str, str]]", batch["notes"])
+    assert [n["id"] for n in found] == ["doc"]
+    assert batch["missing"] == ["gone"]
+    assert await call("list_directory", {}) == {
+        "folders": [],
+        "notes": ["doc", "other"],
+    }
+    updated = await call(
+        "set_frontmatter", {"note_id": "doc", "updates": {"tags": ["t1"]}}
+    )
+    assert updated == {"ok": "true", "id": "doc"}
+    assert await call("get_frontmatter", {"note_id": "doc"}) == {"tags": ["t1"]}
+    assert await call("search_by_tag", {"tag": "T1"}) == {"notes": ["doc"]}
+    assert await call("get_backlinks", {"note_id": "other"}) == {"backlinks": ["doc"]}
+    assert await call("get_outgoing", {"note_id": "doc"}) == {"links": ["other"]}
+    changes = await call("recent_changes", {"limit": 5})
+    assert len(cast("list[object]", changes["changes"])) > 0
+
+
+async def test_mcp_resources_and_prompts(vault_dir: Path) -> None:
+    from fastmcp import Client
+
+    await call("create_note", {"note_id": "doc", "content": "hello"})
+    async with Client(mcp) as client:
+        res = await client.read_resource("vault://doc")
+        assert getattr(res[0], "text", "") == "hello"
+        idx = await client.read_resource("vault://index")
+        assert "doc" in str(getattr(idx[0], "text", ""))
+        prompt = await client.get_prompt("ask_librarian", {"question": "what?"})
+        assert "what?" in str(getattr(prompt.messages[0].content, "text", ""))
+        feedback = await client.get_prompt(
+            "file_feedback", {"kind": "edit", "body": "b", "note_id": "doc"}
+        )
+        assert "give_feedback" in str(getattr(feedback.messages[0].content, "text", ""))

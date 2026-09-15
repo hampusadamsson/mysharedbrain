@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from mysharedbrain import audit, capture
 from mysharedbrain.service import Librarian
-from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound
+from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound, SectionNotFound
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -60,6 +60,24 @@ class QuestionIn(BaseModel):
     question: str
 
 
+class AppendIn(BaseModel):
+    content: str = ""
+
+
+class PatchIn(BaseModel):
+    heading: str
+    content: str = ""
+    mode: str = "replace"
+
+
+class FrontmatterIn(BaseModel):
+    updates: dict[str, object]
+
+
+class BatchIn(BaseModel):
+    note_ids: list[str]
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MySharedBrain", version="0.1.0")
 
@@ -68,11 +86,82 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/api/notes")
-    def list_notes(prefix: str = "", q: str = "") -> dict[str, list[str]]:
+    def list_notes(
+        prefix: str = "", q: str = "", limit: int | None = None, offset: int = 0
+    ) -> dict[str, list[str]]:
         lib = librarian()
         if q.strip():
             return {"notes": lib.vault.search_names(q)}
-        return {"notes": lib.list_notes(prefix)}
+        return {"notes": lib.list_notes(prefix, limit, offset)}
+
+    @app.post("/api/notes/batch")
+    def read_batch(payload: BatchIn) -> dict[str, object]:
+        batch = librarian().read_notes(payload.note_ids)
+        return {
+            "notes": [{"id": n.id, "content": n.content} for n in batch["notes"]],
+            "missing": batch["missing"],
+        }
+
+    @app.get("/api/browse")
+    def browse(prefix: str = "") -> dict[str, list[str]]:
+        return librarian().list_directory(prefix)
+
+    @app.patch("/api/notes/{note_id:path}")
+    def patch_note(note_id: str, payload: PatchIn) -> dict[str, str]:
+        try:
+            note = librarian().patch_note(
+                note_id, payload.heading, payload.content, payload.mode
+            )
+        except (NoteNotFound, SectionNotFound) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (InvalidNoteId, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"id": note.id, "content": note.content}
+
+    @app.post("/api/notes/{note_id:path}/append")
+    def append_note(note_id: str, payload: AppendIn) -> dict[str, str]:
+        try:
+            note = librarian().append_note(note_id, payload.content)
+        except NoteNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidNoteId as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"id": note.id, "content": note.content}
+
+    @app.get("/api/notes/{note_id:path}/meta")
+    def get_frontmatter(note_id: str) -> dict[str, object]:
+        try:
+            return librarian().get_frontmatter(note_id)
+        except (NoteNotFound, InvalidNoteId) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.put("/api/notes/{note_id:path}/meta")
+    def set_frontmatter(note_id: str, payload: FrontmatterIn) -> dict[str, str]:
+        try:
+            note = librarian().set_frontmatter(note_id, payload.updates)
+        except NoteNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidNoteId as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"id": note.id, "content": note.content}
+
+    @app.get("/api/notes/{note_id:path}/outgoing")
+    def get_outgoing(note_id: str) -> dict[str, list[str]]:
+        try:
+            return {"links": librarian().get_outgoing(note_id)}
+        except (NoteNotFound, InvalidNoteId) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/notes/{note_id:path}/backlinks")
+    def get_backlinks(note_id: str) -> dict[str, list[str]]:
+        try:
+            return {"links": librarian().get_backlinks(note_id)}
+        except (NoteNotFound, InvalidNoteId) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/tags/{tag}")
+    def search_tags(tag: str) -> dict[str, list[str]]:
+        return {"notes": librarian().search_tags(tag)}
 
     @app.post("/api/notes", status_code=201)
     def create_note(payload: NoteIn) -> dict[str, str]:
@@ -120,8 +209,8 @@ def create_app() -> FastAPI:
         return {"id": note.id, "content": note.content}
 
     @app.get("/api/search")
-    def search(q: str, limit: int = 20) -> dict[str, object]:
-        result = librarian().search(q, limit)
+    def search(q: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
+        result = librarian().search(q, limit, offset)
         return {
             "names": result["names"],
             "content": [

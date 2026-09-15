@@ -90,3 +90,25 @@ def test_process_capture_reject_leaves_vault_alone(vault_dir: Path) -> None:
 def test_process_capture_unknown_entry_raises(vault_dir: Path) -> None:
     with pytest.raises(capture.EntryNotFound):
         Librarian(vault_dir).process_capture("nope", "rejected", "curator")
+
+
+def test_append_patch_frontmatter_audited(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("doc", "## A\nold\n")
+    lib.append_note("doc", "more")
+    lib.patch_note("doc", "A", "new")
+    lib.set_frontmatter("doc", {"tags": ["x"]})
+    actions = [e.action for e in audit.read_log(vault_dir)]
+    assert actions == ["frontmatter", "patch", "append", "create"]
+    assert lib.get_tags("doc") == ["x"]
+
+
+def test_read_notes_batch_and_recent_changes(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("a", "1")
+    batch = lib.read_notes(["a", "missing"])
+    assert [n.id for n in batch["notes"]] == ["a"]
+    assert batch["missing"] == ["missing"]
+    assert lib.recent_changes(1)[0].action == "create"
+    assert lib.list_directory("") == {"folders": [], "notes": ["a"]}
+    assert lib.search_tags("x") == []

@@ -11,7 +11,7 @@ from fastmcp import FastMCP
 
 from mysharedbrain import capture
 from mysharedbrain.app import librarian
-from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound
+from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound, SectionNotFound
 
 mcp = FastMCP("mysharedbrain")
 
@@ -69,6 +69,104 @@ def move_note(note_id: str, new_id: str) -> dict[str, str]:
 
 
 @mcp.tool
+def list_notes(
+    prefix: str = "", limit: int | None = None, offset: int = 0
+) -> dict[str, object]:
+    """List note ids, sorted, with optional folder prefix and pagination."""
+    return {"notes": librarian(actor="mcp").list_notes(prefix, limit, offset)}
+
+
+@mcp.tool
+def read_notes(note_ids: list[str]) -> dict[str, object]:
+    """Read several notes at once; missing ids are reported, not fatal."""
+    batch = librarian(actor="mcp").read_notes(note_ids)
+    return {
+        "notes": [{"id": n.id, "content": n.content} for n in batch["notes"]],
+        "missing": batch["missing"],
+    }
+
+
+@mcp.tool
+def append_note(note_id: str, content: str) -> dict[str, str]:
+    """Append content to the end of a note. Prefer over full rewrites."""
+    try:
+        note = librarian(actor="mcp").append_note(note_id, content)
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return {"ok": "false", "error": str(exc)}
+    return {"ok": "true", "id": note.id}
+
+
+@mcp.tool
+def patch_note(
+    note_id: str, heading: str, content: str, mode: str = "replace"
+) -> dict[str, str]:
+    """Replace (or append to) the section under a heading. Surgical edits."""
+    try:
+        note = librarian(actor="mcp").patch_note(note_id, heading, content, mode)
+    except (NoteNotFound, SectionNotFound, InvalidNoteId) as exc:
+        return {"ok": "false", "error": str(exc)}
+    except ValueError as exc:
+        return {"ok": "false", "error": str(exc)}
+    return {"ok": "true", "id": note.id}
+
+
+@mcp.tool
+def list_directory(prefix: str = "") -> dict[str, object]:
+    """Direct children of a folder: subfolders and note ids."""
+    return librarian(actor="mcp").list_directory(prefix)  # type: ignore[return-value]
+
+
+@mcp.tool
+def get_frontmatter(note_id: str) -> dict[str, object]:
+    """A note's YAML frontmatter (tags, etc.)."""
+    try:
+        return librarian(actor="mcp").get_frontmatter(note_id)
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool
+def set_frontmatter(note_id: str, updates: dict[str, object]) -> dict[str, str]:
+    """Merge keys into frontmatter (null value deletes a key)."""
+    try:
+        note = librarian(actor="mcp").set_frontmatter(note_id, updates)  # type: ignore[arg-type]
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return {"ok": "false", "error": str(exc)}
+    return {"ok": "true", "id": note.id}
+
+
+@mcp.tool
+def search_by_tag(tag: str) -> dict[str, object]:
+    """Notes carrying a frontmatter tag."""
+    return {"notes": librarian(actor="mcp").search_tags(tag)}
+
+
+@mcp.tool
+def get_backlinks(note_id: str) -> dict[str, object]:
+    """Notes linking to this one via [[links]]."""
+    try:
+        return {"backlinks": librarian(actor="mcp").get_backlinks(note_id)}
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool
+def get_outgoing(note_id: str) -> dict[str, object]:
+    """[[Link]] targets a note points to."""
+    try:
+        return {"links": librarian(actor="mcp").get_outgoing(note_id)}
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool
+def recent_changes(limit: int = 20) -> dict[str, object]:
+    """Latest audited vault and capture changes, newest first."""
+    entries = librarian(actor="mcp").recent_changes(limit)
+    return {"changes": [e.__dict__ for e in entries]}
+
+
+@mcp.tool
 def search_notes(query: str, limit: int = 20) -> dict[str, object]:
     """Search notes by name and content (ripgrep)."""
     result = librarian(actor="mcp").search(query, limit)
@@ -110,6 +208,42 @@ def review_capture(
     except (capture.EntryNotFound, capture.EntryAlreadyReviewed, ValueError) as exc:
         return {"ok": "false", "error": str(exc)}
     return {"ok": "true", "id": entry.id, "status": entry.status}
+
+
+@mcp.resource("vault://{note_id}")
+def vault_note(note_id: str) -> str:
+    """A vault note's markdown by id — browse without tool calls."""
+    try:
+        return librarian(actor="mcp").read_note(note_id).content
+    except (NoteNotFound, InvalidNoteId) as exc:
+        return f"Error: {exc}"
+
+
+@mcp.resource("vault://index")
+def vault_index() -> str:
+    """All note ids in the vault, sorted."""
+    return "\n".join(librarian(actor="mcp").list_notes())
+
+
+@mcp.prompt()
+def ask_librarian(question: str) -> str:
+    """Ask the librarian; misses are queued for future retrieval."""
+    return (
+        "Ask the MySharedBrain librarian this question with ask_question: "
+        f"{question}. If it is already answered, present the matching notes. "
+        "If not found, the miss is logged as a request — "
+        "use give_feedback(kind='request', ...) only for follow-up context."
+    )
+
+
+@mcp.prompt()
+def file_feedback(kind: str, body: str, note_id: str = "") -> str:
+    """Queue vault feedback for librarian review (edit/missing/request)."""
+    return (
+        f"File this feedback with give_feedback(kind='{kind}', note_id='{note_id}'): {body}. "
+        "It lands in the capture queue as pending; the librarian reviews "
+        "(applied/approved/rejected) before anything touches the vault."
+    )
 
 
 @mcp.tool

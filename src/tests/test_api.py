@@ -126,3 +126,36 @@ def test_invalid_id_rejected(vault_dir: Path) -> None:
         c.post("/api/notes", json={"id": "../escape", "content": "x"}).status_code
         == 400
     )
+
+
+def test_append_patch_frontmatter_links_endpoints(vault_dir: Path) -> None:
+    c = client(vault_dir)
+    c.post(
+        "/api/notes",
+        json={"id": "doc", "content": "## A\nold\n\n## Links\nSee [[other]]."},
+    )
+    c.post("/api/notes", json={"id": "other", "content": "o"})
+    appended = c.post("/api/notes/doc/append", json={"content": "tail"}).json()
+    assert appended["content"].endswith("tail")
+    assert c.post("/api/notes/missing/append", json={"content": "x"}).status_code == 404
+    patched = c.patch("/api/notes/doc", json={"heading": "A", "content": "new"}).json()
+    assert "new" in patched["content"] and "old" not in patched["content"]
+    assert (
+        c.patch("/api/notes/doc", json={"heading": "Nope", "content": "x"}).status_code
+        == 404
+    )
+    bad = c.patch(
+        "/api/notes/doc", json={"heading": "A", "content": "x", "mode": "bogus"}
+    )
+    assert bad.status_code == 400
+    updated = c.put("/api/notes/doc/meta", json={"updates": {"tags": ["t1"]}}).json()
+    assert updated["id"] == "doc"
+    assert c.get("/api/notes/doc/meta").json() == {"tags": ["t1"]}
+    assert c.get("/api/tags/t1").json() == {"notes": ["doc"]}
+    assert c.get("/api/notes/doc/outgoing").json() == {"links": ["other"]}
+    assert c.get("/api/notes/other/backlinks").json() == {"links": ["doc"]}
+    assert c.get("/api/browse").json() == {"folders": [], "notes": ["doc", "other"]}
+    batch = c.post("/api/notes/batch", json={"note_ids": ["doc", "gone"]}).json()
+    assert [n["id"] for n in batch["notes"]] == ["doc"]
+    assert batch["missing"] == ["gone"]
+    assert c.get("/api/notes", params={"limit": 1}).json() == {"notes": ["doc"]}

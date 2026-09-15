@@ -12,13 +12,19 @@ from pathlib import Path
 from typing import TypedDict
 
 from mysharedbrain import audit, capture
+from mysharedbrain.audit import AuditEntry
 from mysharedbrain.capture import FeedbackEntry
-from mysharedbrain.vault import Note, SearchHit, Vault
+from mysharedbrain.vault import Note, SearchHit, Vault, VaultError
 
 
 class SearchResult(TypedDict):
     names: list[str]
     content: list[SearchHit]
+
+
+class BatchRead(TypedDict):
+    notes: list[Note]
+    missing: list[str]
 
 
 @dataclass(frozen=True)
@@ -68,13 +74,69 @@ class Librarian:
         )
         return note
 
-    def list_notes(self, prefix: str = "") -> list[str]:
-        return self.vault.list_notes(prefix)
+    def list_notes(
+        self, prefix: str = "", limit: int | None = None, offset: int = 0
+    ) -> list[str]:
+        return self.vault.list_notes(prefix, limit, offset)
 
-    def search(self, query: str, limit: int = 20) -> SearchResult:
+    def read_notes(self, note_ids: list[str]) -> BatchRead:
+        found: list[Note] = []
+        missing: list[str] = []
+        for nid in note_ids:
+            try:
+                found.append(self.vault.read(nid))
+            except VaultError:
+                missing.append(nid)
+        return BatchRead(notes=found, missing=missing)
+
+    def append_note(self, note_id: str, content: str) -> Note:
+        note = self.vault.append(note_id, content)
+        audit.append(self.root, actor=self.actor, action="append", note_id=note.id)
+        return note
+
+    def patch_note(
+        self, note_id: str, heading: str, content: str, mode: str = "replace"
+    ) -> Note:
+        note = self.vault.patch(note_id, heading, content, mode)
+        audit.append(
+            self.root,
+            actor=self.actor,
+            action="patch",
+            note_id=note.id,
+            detail=f"section:{heading}",
+        )
+        return note
+
+    def list_directory(self, prefix: str = "") -> dict[str, list[str]]:
+        return self.vault.list_directory(prefix)
+
+    def get_frontmatter(self, note_id: str) -> dict[str, object]:
+        return self.vault.get_frontmatter(note_id)
+
+    def set_frontmatter(self, note_id: str, updates: dict[str, object | None]) -> Note:
+        note = self.vault.set_frontmatter(note_id, updates)
+        audit.append(self.root, actor=self.actor, action="frontmatter", note_id=note.id)
+        return note
+
+    def get_tags(self, note_id: str) -> list[str]:
+        return self.vault.get_tags(note_id)
+
+    def search_tags(self, tag: str) -> list[str]:
+        return self.vault.search_tags(tag)
+
+    def get_outgoing(self, note_id: str) -> list[str]:
+        return self.vault.get_outgoing(note_id)
+
+    def get_backlinks(self, note_id: str) -> list[str]:
+        return self.vault.get_backlinks(note_id)
+
+    def recent_changes(self, limit: int = 20) -> list[AuditEntry]:
+        return audit.read_log(self.root, limit)
+
+    def search(self, query: str, limit: int = 20, offset: int = 0) -> SearchResult:
         return SearchResult(
             names=self.vault.search_names(query),
-            content=self.vault.search_content(query, limit),
+            content=self.vault.search_content(query, limit, offset),
         )
 
     # -- feedback / capture --------------------------------------------------

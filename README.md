@@ -48,12 +48,25 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 | ---- | ----------- |
 | `create_note` | Create note |
 | `read_note` | Read note by id |
+| `read_notes` | Batch-read several notes (missing ids reported) |
+| `list_notes` | List note ids (prefix filter + pagination) |
+| `list_directory` | Direct children of a folder |
 | `update_note` | Update note by id |
+| `append_note` | Append to a note (prefer over rewrites) |
+| `patch_note` | Replace/append a section under a heading |
 | `delete_note` | Delete note by id |
 | `move_note` | Move/rename note |
 | `search_notes` | Search names + content (ripgrep) |
-| `give_feedback` | Correct info · flag missing info · file a request |
+| `search_by_tag` | Notes with a frontmatter tag |
+| `get_frontmatter` / `set_frontmatter` | Read/merge YAML frontmatter |
+| `get_backlinks` / `get_outgoing` | `[[Link]]` graph neighbors |
+| `recent_changes` | Latest audited changes, newest first |
+| `give_feedback` | Queue an edit · flag missing info · file a request |
+| `review_capture` | Review queue entry: applied/approved/rejected |
 | `ask_question` | Ask the librarian; misses are logged for future retrieval |
+
+Plus MCP resources (`vault://<id>`, `vault://index`) and prompts
+(`ask_librarian`, `file_feedback`).
 
 Add to an MCP client (stdio):
 
@@ -67,9 +80,10 @@ Add to an MCP client (stdio):
 
 ## REST API
 
-Notes `POST/GET/PUT/DELETE /api/notes…` (+ `/move`), `GET /api/search?q=`,
-`POST /api/feedback`, `GET /api/capture`, `POST /api/capture/{id}/review`,
-`POST /api/request`, `GET /api/audit`, `GET /health`.
+Notes `POST/GET/PUT/DELETE/PATCH /api/notes…` (+ `/move`, `/append`, `/batch`),
+`GET /api/browse`, `/api/notes/{id}/{meta,outgoing,backlinks}`, `/api/tags/{tag}`,
+`GET /api/search?q=`, `POST /api/feedback`, `GET /api/capture`,
+`POST /api/capture/{id}/review`, `POST /api/request`, `GET /api/audit`, `GET /health`.
 
 ## Docker
 
