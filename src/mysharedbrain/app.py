@@ -78,14 +78,111 @@ class BatchIn(BaseModel):
     note_ids: list[str]
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="MySharedBrain", version="0.1.0")
+class NoteOut(BaseModel):
+    id: str
+    content: str
 
-    @app.get("/health")
+
+class NotesOut(BaseModel):
+    notes: list[str]
+
+
+class BatchOut(BaseModel):
+    notes: list[NoteOut]
+    missing: list[str]
+
+
+class BrowseOut(BaseModel):
+    folders: list[str]
+    notes: list[str]
+
+
+class LinksOut(BaseModel):
+    links: list[str]
+
+
+class TagsOut(BaseModel):
+    notes: list[str]
+
+
+class SearchHitOut(BaseModel):
+    id: str
+    excerpts: list[str]
+
+
+class SearchOut(BaseModel):
+    names: list[str]
+    content: list[SearchHitOut]
+
+
+class FeedbackOut(BaseModel):
+    id: str
+    status: str
+
+
+class CaptureEntryOut(BaseModel):
+    id: str
+    ts: str
+    kind: str
+    body: str
+    note_id: str
+    status: str
+    reviewer: str = ""
+    review_note: str = ""
+
+
+class CaptureListOut(BaseModel):
+    entries: list[CaptureEntryOut]
+
+
+class AuditEntryOut(BaseModel):
+    ts: str
+    actor: str
+    action: str
+    note_id: str
+    detail: str
+
+
+class AuditListOut(BaseModel):
+    entries: list[AuditEntryOut]
+
+
+class AskOut(BaseModel):
+    found: bool
+    question: str
+    note_ids: list[str]
+    hits: list[SearchHitOut]
+    entry_id: str
+    message: str
+
+
+class HealthOut(BaseModel):
+    status: str
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="MySharedBrain",
+        version="0.1.0",
+        description=(
+            "AI-native markdown wiki vault: notes CRUD, ripgrep search, "
+            "feedback capture queue, audit log and a librarian Q&A endpoint. "
+            "Interactive docs here; MCP tools mirror every route."
+        ),
+    )
+
+    @app.get(
+        "/health", response_model=HealthOut, tags=["system"], summary="Health check"
+    )
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/notes")
+    @app.get(
+        "/api/notes",
+        response_model=NotesOut,
+        tags=["notes"],
+        summary="List notes (prefix filter + pagination)",
+    )
     def list_notes(
         prefix: str = "", q: str = "", limit: int | None = None, offset: int = 0
     ) -> dict[str, list[str]]:
@@ -94,7 +191,12 @@ def create_app() -> FastAPI:
             return {"notes": lib.vault.search_names(q)}
         return {"notes": lib.list_notes(prefix, limit, offset)}
 
-    @app.post("/api/notes/batch")
+    @app.post(
+        "/api/notes/batch",
+        response_model=BatchOut,
+        tags=["notes"],
+        summary="Read several notes at once",
+    )
     def read_batch(payload: BatchIn) -> dict[str, object]:
         batch = librarian().read_notes(payload.note_ids)
         return {
@@ -102,11 +204,21 @@ def create_app() -> FastAPI:
             "missing": batch["missing"],
         }
 
-    @app.get("/api/browse")
+    @app.get(
+        "/api/browse",
+        response_model=BrowseOut,
+        tags=["notes"],
+        summary="Direct children of a folder",
+    )
     def browse(prefix: str = "") -> dict[str, list[str]]:
         return librarian().list_directory(prefix)
 
-    @app.patch("/api/notes/{note_id:path}")
+    @app.patch(
+        "/api/notes/{note_id:path}",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Replace/append a section under a heading",
+    )
     def patch_note(note_id: str, payload: PatchIn) -> dict[str, str]:
         try:
             note = librarian().patch_note(
@@ -118,7 +230,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.post("/api/notes/{note_id:path}/append")
+    @app.post(
+        "/api/notes/{note_id:path}/append",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Append content to a note",
+    )
     def append_note(note_id: str, payload: AppendIn) -> dict[str, str]:
         try:
             note = librarian().append_note(note_id, payload.content)
@@ -128,14 +245,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.get("/api/notes/{note_id:path}/meta")
+    @app.get(
+        "/api/notes/{note_id:path}/meta",
+        tags=["notes"],
+        summary="A note's YAML frontmatter",
+    )
     def get_frontmatter(note_id: str) -> dict[str, object]:
         try:
             return librarian().get_frontmatter(note_id)
         except (NoteNotFound, InvalidNoteId) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.put("/api/notes/{note_id:path}/meta")
+    @app.put(
+        "/api/notes/{note_id:path}/meta",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Merge keys into frontmatter",
+    )
     def set_frontmatter(note_id: str, payload: FrontmatterIn) -> dict[str, str]:
         try:
             note = librarian().set_frontmatter(note_id, payload.updates)
@@ -145,25 +271,46 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.get("/api/notes/{note_id:path}/outgoing")
+    @app.get(
+        "/api/notes/{note_id:path}/outgoing",
+        response_model=LinksOut,
+        tags=["notes"],
+        summary="[[Link]] targets of a note",
+    )
     def get_outgoing(note_id: str) -> dict[str, list[str]]:
         try:
             return {"links": librarian().get_outgoing(note_id)}
         except (NoteNotFound, InvalidNoteId) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.get("/api/notes/{note_id:path}/backlinks")
+    @app.get(
+        "/api/notes/{note_id:path}/backlinks",
+        response_model=LinksOut,
+        tags=["notes"],
+        summary="Notes linking to this one",
+    )
     def get_backlinks(note_id: str) -> dict[str, list[str]]:
         try:
             return {"links": librarian().get_backlinks(note_id)}
         except (NoteNotFound, InvalidNoteId) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.get("/api/tags/{tag}")
+    @app.get(
+        "/api/tags/{tag}",
+        response_model=TagsOut,
+        tags=["notes"],
+        summary="Notes carrying a frontmatter tag",
+    )
     def search_tags(tag: str) -> dict[str, list[str]]:
         return {"notes": librarian().search_tags(tag)}
 
-    @app.post("/api/notes", status_code=201)
+    @app.post(
+        "/api/notes",
+        status_code=201,
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Create a note",
+    )
     def create_note(payload: NoteIn) -> dict[str, str]:
         try:
             note = librarian().create_note(payload.id, payload.content)
@@ -173,7 +320,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.get("/api/notes/{note_id:path}")
+    @app.get(
+        "/api/notes/{note_id:path}",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Read a note by id",
+    )
     def read_note(note_id: str) -> dict[str, str]:
         try:
             note = librarian().read_note(note_id)
@@ -181,7 +333,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.put("/api/notes/{note_id:path}")
+    @app.put(
+        "/api/notes/{note_id:path}",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Replace a note's content",
+    )
     def update_note(note_id: str, payload: ContentIn) -> dict[str, str]:
         try:
             note = librarian().update_note(note_id, payload.content)
@@ -191,14 +348,24 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.delete("/api/notes/{note_id:path}", status_code=204)
+    @app.delete(
+        "/api/notes/{note_id:path}",
+        status_code=204,
+        tags=["notes"],
+        summary="Delete a note",
+    )
     def delete_note(note_id: str) -> None:
         try:
             librarian().delete_note(note_id)
         except (NoteNotFound, InvalidNoteId) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.post("/api/notes/{note_id:path}/move")
+    @app.post(
+        "/api/notes/{note_id:path}/move",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Move/rename a note",
+    )
     def move_note(note_id: str, payload: MoveIn) -> dict[str, str]:
         try:
             note = librarian().move_note(note_id, payload.to)
@@ -208,7 +375,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": note.id, "content": note.content}
 
-    @app.get("/api/search")
+    @app.get(
+        "/api/search",
+        response_model=SearchOut,
+        tags=["notes"],
+        summary="Search names + content (ripgrep)",
+    )
     def search(q: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
         result = librarian().search(q, limit, offset)
         return {
@@ -218,7 +390,13 @@ def create_app() -> FastAPI:
             ],
         }
 
-    @app.post("/api/feedback", status_code=201)
+    @app.post(
+        "/api/feedback",
+        status_code=201,
+        response_model=FeedbackOut,
+        tags=["capture"],
+        summary="Queue feedback (edit/missing/request)",
+    )
     def give_feedback(payload: FeedbackIn) -> dict[str, str]:
         try:
             entry = librarian().give_feedback(
@@ -228,12 +406,22 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": entry.id, "status": entry.status}
 
-    @app.get("/api/capture")
+    @app.get(
+        "/api/capture",
+        response_model=CaptureListOut,
+        tags=["capture"],
+        summary="List queue entries (status filter)",
+    )
     def list_capture(status: capture.Status | None = None) -> dict[str, object]:
         entries = capture.list_entries(vault_root(), status)
         return {"entries": [e.__dict__ for e in entries]}
 
-    @app.post("/api/capture/{entry_id}/review")
+    @app.post(
+        "/api/capture/{entry_id}/review",
+        response_model=FeedbackOut,
+        tags=["capture"],
+        summary="Review an entry: applied/approved/rejected",
+    )
     def review_capture(entry_id: str, payload: ReviewIn) -> dict[str, str]:
         try:
             entry = librarian().process_capture(
@@ -249,7 +437,12 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"id": entry.id, "status": entry.status}
 
-    @app.post("/api/request")
+    @app.post(
+        "/api/request",
+        response_model=AskOut,
+        tags=["librarian"],
+        summary="Ask the librarian (misses are logged)",
+    )
     def ask_question(payload: QuestionIn) -> dict[str, object]:
         try:
             answer = librarian().ask(payload.question)
@@ -264,7 +457,12 @@ def create_app() -> FastAPI:
             "message": answer.message,
         }
 
-    @app.get("/api/audit")
+    @app.get(
+        "/api/audit",
+        response_model=AuditListOut,
+        tags=["librarian"],
+        summary="Latest audited changes, newest first",
+    )
     def read_audit(limit: int = 100) -> dict[str, object]:
         return {"entries": [e.__dict__ for e in audit.read_log(vault_root(), limit)]}
 

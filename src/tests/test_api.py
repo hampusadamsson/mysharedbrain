@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from starlette.routing import Route
 
 from mysharedbrain.app import create_app
 
@@ -109,6 +111,32 @@ def test_audit_records_mutations(vault_dir: Path) -> None:
     entries = c.get("/api/audit").json()["entries"]
     assert entries[0]["action"] == "create"
     assert entries[0]["note_id"] == "a"
+
+
+def test_openapi_docs_cover_every_api_route(vault_dir: Path) -> None:
+    c = client(vault_dir)
+    assert c.get("/docs").status_code == 200
+    assert c.get("/redoc").status_code == 200
+    spec = c.get("/openapi.json").json()
+    assert spec["info"]["title"] == "MySharedBrain"
+    documented = {
+        (method, path)
+        for path, ops in spec["paths"].items()
+        if path.startswith("/api")
+        for method in ops
+    }
+    routes: set[tuple[str, str]] = set()
+    for r in create_app().routes:
+        # OpenAPI normalizes Starlette's {param:path} converters to {param}.
+        if isinstance(r, Route) and r.methods and r.path.startswith("/api"):
+            path = re.sub(r":path(?=})", "", r.path)
+            routes.update((m.lower(), path) for m in sorted(r.methods))
+    assert documented == routes
+    for path, ops in spec["paths"].items():
+        if path.startswith("/api"):
+            for method, op in ops.items():
+                assert op.get("summary"), f"{method} {path} lacks a summary"
+                assert op.get("tags"), f"{method} {path} lacks tags"
 
 
 def test_spa_fallback_serves_index_for_page_and_view_urls(vault_dir: Path) -> None:
