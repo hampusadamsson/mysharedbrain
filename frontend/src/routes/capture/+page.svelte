@@ -93,9 +93,9 @@
 	}
 </script>
 
-<div class="flex items-center justify-between gap-3">
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 	<h1 class="text-2xl font-semibold tracking-tight">Capture queue</h1>
-	<div class="flex gap-1">
+	<div class="flex flex-wrap gap-1">
 		{#each FILTERS as option (option.value)}
 			<Button
 				size="sm"

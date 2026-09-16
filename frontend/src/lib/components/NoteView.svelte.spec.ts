@@ -35,6 +35,17 @@ describe('NoteView', () => {
 		await expect.element(page.getByText('k3s runs on elitedesk')).toBeVisible();
 	});
 
+	it('marks the article so wide markdown is contained (wiki-body + table fix)', async () => {
+		const { container } = await render(NoteView, {
+			note: { id: 'wide', content: '| a | b |\n| - | - |\n| 1 | 2 |\n' },
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+		const article = container.querySelector('article');
+		expect(article?.classList.contains('wiki-body')).toBe(true);
+		expect(article?.querySelector('table')).not.toBeNull();
+	});
+
 	it('saves content without navigating when the id is unchanged', async () => {
 		api.updateNote.mockResolvedValue({ id: note.id, content: 'edited' });
 		const onchanged = vi.fn(async () => {});

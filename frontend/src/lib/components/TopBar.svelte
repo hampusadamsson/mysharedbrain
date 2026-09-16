@@ -104,7 +104,7 @@
 			</div>
 		{/if}
 	</div>
-	<Button onclick={() => (createOpen = true)}>
+	<Button onclick={() => (createOpen = true)} aria-label="Create page">
 		<Plus class="size-4" /> <span class="hidden sm:inline">Create</span>
 	</Button>
 	<span

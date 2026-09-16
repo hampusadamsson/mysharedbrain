@@ -127,3 +127,20 @@
 		@apply font-sans;
 	}
 }
+
+/* Markdown rendering: wide content must scroll inside its own box instead of
+   forcing the whole page to scroll horizontally on narrow screens. */
+@layer components {
+	.wiki-body table {
+		display: block;
+		overflow-x: auto;
+		max-width: 100%;
+	}
+	.wiki-body pre {
+		overflow-x: auto;
+		max-width: 100%;
+	}
+	.wiki-body :is(p, li, h1, h2, h3, h4, blockquote) {
+		overflow-wrap: anywhere;
+	}
+}

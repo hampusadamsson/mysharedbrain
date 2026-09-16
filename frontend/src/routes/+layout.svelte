@@ -1,4 +1,5 @@
 <script lang="ts">
+	import './layout.css';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -31,7 +32,9 @@
 	>
 		<Sidebar />
 	</aside>
-	<main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-10">
+	<!-- min-w-0: without it, wide content (markdown tables) sets the column's
+	     min-content width and pushes the whole layout past the viewport. -->
+	<main class="mx-auto w-full max-w-4xl min-w-0 flex-1 px-4 py-6 md:px-10">
 		{@render children()}
 	</main>
 </div>
