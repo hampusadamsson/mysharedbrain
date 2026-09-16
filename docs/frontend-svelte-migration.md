@@ -1,5 +1,18 @@
 # UI migration plan: vanilla JS → SvelteKit (static build)
 
+> **Status: implemented** (2026-09-16). All six steps shipped; the deployed
+> image serves the Svelte UI. Kept as the record of the migration.
+>
+> Deviations from the plan as written:
+> - `svelte.config.js` is not used — the static adapter is configured in
+>   `vite.config.ts` (the `sv` scaffold passes options to the vite plugin).
+> - Component tests run in Chromium via vitest browser mode, so CI installs
+>   Playwright browsers (`pnpm exec playwright install --with-deps chromium`).
+> - `docker.yml` was rewritten to build each architecture on a **native**
+>   runner (amd64 + `ubuntu-24.04-arm`) and merge digests with
+>   `docker buildx imagetools create`. The single-job QEMU build took 38+ min
+>   for the UI stage; native runners cut it to ~1 min.
+
 Reference implementation: `golfkompis` frontend (same patterns, proven in prod).
 Goal: keep the decoupling contract (UI talks HTTP JSON only), keep one runtime
 image, keep unique URLs — replace the 700-line no-build `app.js` with a typed
