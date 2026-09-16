@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from starlette.routing import Route
 
+from mysharedbrain import app as app_module
 from mysharedbrain.app import create_app
 
 
@@ -151,13 +153,40 @@ def test_openapi_docs_cover_every_api_route(vault_dir: Path) -> None:
                 assert op.get("tags"), f"{method} {path} lacks tags"
 
 
-def test_spa_fallback_serves_index_for_page_and_view_urls(vault_dir: Path) -> None:
+def test_spa_fallback_serves_index_for_page_and_view_urls(
+    vault_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a built UI present: real files win, SPA routes boot index.html,
+    unknown API paths stay JSON 404s."""
+    static = tmp_path / "static"
+    (static / "_app" / "immutable").mkdir(parents=True)
+    (static / "index.html").write_text("<title>MySharedBrain</title>", encoding="utf-8")
+    (static / "_app" / "immutable" / "app.js").write_text(
+        "console.log(1)", encoding="utf-8"
+    )
+    (static / "robots.txt").write_text("User-agent: *", encoding="utf-8")
+    monkeypatch.setattr(app_module, "STATIC_DIR", static)
     c = client(vault_dir)
-    for path in ("/p/projects/homelab", "/ask", "/capture", "/activity"):
+
+    for path in ("/p/projects/homelab", "/ask", "/capture", "/activity", "/search"):
         r = c.get(path)
-        assert r.status_code == 200
+        assert r.status_code == 200, path
         assert "MySharedBrain" in r.text
+
+    assert c.get("/robots.txt").status_code == 200
+    assert c.get("/_app/immutable/app.js").status_code == 200
     assert c.get("/api/no-such-endpoint").status_code == 404
+
+
+def test_api_only_without_built_ui(
+    vault_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No static dir (local dev): API works, SPA routes are 404."""
+    monkeypatch.setattr(app_module, "STATIC_DIR", tmp_path / "missing")
+    c = client(vault_dir)
+    assert c.get("/health").status_code == 200
+    assert c.get("/api/notes").status_code == 200
+    assert c.get("/p/some/page").status_code == 404
 
 
 def test_invalid_id_rejected(vault_dir: Path) -> None:

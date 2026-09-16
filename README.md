@@ -1,6 +1,7 @@
 # MySharedBrain
 
 [![CI Backend](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml)
+[![CI Frontend](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml)
 [![Docker Build & Push](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml)
 
 An information management system meant for AI. A fully fledged markdown vault
@@ -26,8 +27,24 @@ src/mysharedbrain/   backend (uv · Python 3.13 · FastAPI · FastMCP)
   service.py         the librarian: single audited mutation path
   app.py             REST API + serves the UI
   mcp.py             MCP server (7 tools)
-frontend/            decoupled static UI (no build; HTTP JSON only)
-Dockerfile           single runtime image (backend serves the UI)
+frontend/            SvelteKit UI (Svelte 5 runes + TS, Tailwind 4, shadcn-svelte)
+  src/lib/api/       typed HTTP client — the only backend coupling
+  src/lib/components shadcn-svelte primitives + app components
+Dockerfile           multi-stage: UI build → backend deps → runtime
+```
+
+## Frontend
+
+SvelteKit 2 + Svelte 5 (runes) + TypeScript, Tailwind CSS v4, shadcn-svelte
+(vega style, lucide icons), `adapter-static` in SPA mode. No SSR: the build
+output (`index.html` + hashed `_app/` assets) is served by the FastAPI backend
+from `./static` (`build/` locally, `./static` in the image).
+
+```bash
+cd frontend
+pnpm install
+pnpm dev      # UI on :5173, proxying /api + /health to :8000
+pnpm test     # unit (node) + component (vitest browser, chromium)
 ```
 
 ## Quickstart (local dev)
@@ -93,6 +110,9 @@ Notes `POST/GET/PUT/DELETE/PATCH /api/notes…` (+ `/move`, `/append`, `/batch`,
 docker build -t mysharedbrain .
 docker run -p 8000:8000 -v mysharedbrain-data:/data/vault mysharedbrain
 ```
+
+The image builds the UI (node stage) and the backend (uv stage), then serves
+both from one process: API under `/api`, UI at `/`.
 
 Images are published to `ghcr.io/hampusadamsson/mysharedbrain` (`sha-<sha>`,
 `latest` on `main`).

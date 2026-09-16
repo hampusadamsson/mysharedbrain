@@ -7,8 +7,3 @@ bun.lockb
 
 # Miscellaneous
 /static/
-
-# Legacy no-build UI (deleted at Svelte cutover; do not reformat)
-app.js
-index.html
-styles.css

@@ -1,8 +1,16 @@
 .git
 .gitignore
 .github
+docs
 __pycache__
 *.pyc
 .venv
 vault/
 .env
+
+# frontend: only sources + lockfile go into the build context
+frontend/node_modules
+frontend/.svelte-kit
+frontend/build
+frontend/.env
+frontend/.env.*

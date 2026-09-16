@@ -26,7 +26,9 @@ from mysharedbrain.vault import (
     SectionNotFound,
 )
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+# Built UI (SvelteKit adapter-static output), copied to ./static in the image.
+# Absent in local dev — then this process is API-only and vite serves the UI.
+STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 
 _NOT_FOUND = (NoteNotFound, SectionNotFound, capture.EntryNotFound)
 _CONFLICT = (NoteExists, capture.EntryAlreadyReviewed)
@@ -439,20 +441,25 @@ def create_app() -> FastAPI:
     def read_audit(limit: int = 100) -> dict[str, object]:
         return {"entries": [e.__dict__ for e in audit.read_log(vault_root(), limit)]}
 
-    if FRONTEND_DIR.is_dir():
-        app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
-
-        @app.get("/", include_in_schema=False)
-        def index() -> FileResponse:
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
+    if STATIC_DIR.is_dir():
+        # Hashed, immutable SvelteKit assets live under /_app.
+        if (STATIC_DIR / "_app").is_dir():
+            app.mount(
+                "/_app", StaticFiles(directory=str(STATIC_DIR / "_app")), name="_app"
+            )
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa_fallback(full_path: str) -> FileResponse:
-            # Unique page/view URLs (e.g. /p/<id>, /ask) all boot the SPA;
-            # API, health, docs and static routes above take precedence.
+            # Real files (favicon, robots) win; everything else boots the SPA
+            # so unique page URLs (/p/<id>, /ask, …) resolve client-side.
+            # API, health and docs routes above take precedence; unknown API
+            # paths must stay JSON 404s.
             if full_path == "api" or full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="Not Found")
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
+            candidate = STATIC_DIR / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(str(candidate))
+            return FileResponse(str(STATIC_DIR / "index.html"))
 
     return app
 

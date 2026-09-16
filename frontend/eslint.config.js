@@ -34,10 +34,6 @@ export default defineConfig(
 		}
 	},
 	{
-		// Legacy no-build UI: untouched until the Svelte cutover deletes it.
-		ignores: ['app.js', 'styles.css']
-	},
-	{
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {
