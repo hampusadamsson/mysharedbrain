@@ -1,4 +1,11 @@
-// Responsive audit of the live UI (deleted after use).
+// Responsive audit: loads every route at phone/tablet/desktop viewports and
+// reports page-level horizontal overflow (ignoring content contained by its own
+// scroll box) plus mobile drawer/dialog behaviour.
+//
+//   pnpm audit:responsive                          # live cluster
+//   BASE=http://localhost:5173 pnpm audit:responsive
+//
+// Exits non-zero when something overflows.
 import { chromium } from 'playwright';
 
 const BASE = process.env.BASE ?? 'https://mysharedbrain.haadpi.duckdns.org:9443';

@@ -13,7 +13,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
-		"test": "npm run test:unit -- --run"
+		"test": "npm run test:unit -- --run",
+		"audit:responsive": "node scripts/audit-responsive.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
