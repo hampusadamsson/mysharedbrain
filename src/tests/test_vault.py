@@ -242,6 +242,14 @@ def test_list_pagination(vault_dir: Path) -> None:
     assert vault.list_notes(offset=4) == ["n4"]
 
 
+def test_search_excerpts_have_no_line_numbers(vault_dir: Path) -> None:
+    vault = Vault(vault_dir)
+    vault.create("net", "first line\nthe elitedesk ip is here\nlast line\n")
+    hits = vault.search_content("elitedesk")
+    assert [h.id for h in hits] == ["net"]
+    assert hits[0].excerpts == ["the elitedesk ip is here"]
+
+
 def test_search_content_offset(
     vault_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

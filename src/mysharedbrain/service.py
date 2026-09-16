@@ -7,6 +7,8 @@ its back.
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
@@ -14,7 +16,7 @@ from typing import TypedDict
 from mysharedbrain import audit, capture
 from mysharedbrain.audit import AuditEntry
 from mysharedbrain.capture import FeedbackEntry
-from mysharedbrain.vault import Note, SearchHit, Vault, VaultError
+from mysharedbrain.vault import Note, NoteNotFound, SearchHit, Vault, VaultError
 
 
 class SearchResult(TypedDict):
@@ -25,6 +27,67 @@ class SearchResult(TypedDict):
 class BatchRead(TypedDict):
     notes: list[Note]
     missing: list[str]
+
+
+_STOP_WORDS = frozenset(
+    [
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whom",
+        "whose",
+        "why",
+        "how",
+        "is",
+        "are",
+        "was",
+        "were",
+        "the",
+        "a",
+        "an",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "and",
+        "or",
+        "it",
+        "its",
+        "this",
+        "that",
+        "with",
+        "by",
+        "from",
+        "as",
+        "at",
+        "be",
+        "do",
+        "does",
+        "me",
+        "my",
+        "you",
+        "your",
+        "we",
+        "our",
+    ]
+)
+
+
+def _tokens(question: str) -> list[str]:
+    """Searchable tokens: alphanumerics, len>=3, no stop words, order kept."""
+    out: list[str] = []
+    for word in re.findall(r"[A-Za-z0-9_#-]+", question.lower()):
+        word = word.strip("#")
+        if len(word) >= 3 and word not in _STOP_WORDS and word not in out:
+            out.append(word)
+    return out
+
+
+def vault_root() -> Path:
+    return Path(os.environ.get("VAULT_DIR", "vault")).resolve()
 
 
 @dataclass(frozen=True)
@@ -61,7 +124,18 @@ class Librarian:
 
     def delete_note(self, note_id: str) -> None:
         self.vault.delete(note_id)
-        audit.append(self.root, actor=self.actor, action="delete", note_id=note_id)
+        audit.append(
+            self.root,
+            actor=self.actor,
+            action="delete",
+            note_id=note_id,
+            detail=f"trash:.brain/trash/{note_id}",
+        )
+
+    def restore_note(self, note_id: str) -> Note:
+        note = self.vault.restore(note_id)
+        audit.append(self.root, actor=self.actor, action="restore", note_id=note.id)
+        return note
 
     def move_note(self, note_id: str, new_id: str) -> Note:
         note = self.vault.move(note_id, new_id)
@@ -181,26 +255,28 @@ class Librarian:
                 )
             raise capture.EntryNotFound(f"capture entry not found: {entry_id!r}")
         entry = pending[0]
+        if verdict == "applied" and entry.note_id and content is None:
+            raise ValueError(
+                "applied requires content for entries with a note; "
+                "use approved to endorse without changes"
+            )
         if verdict == "applied" and content is not None and entry.note_id:
+            # Vault first, review second: re-applying identical content converges,
+            # so a crash between the two is retried, not lost.
             try:
                 self.vault.read(entry.note_id)
                 self.vault.update(entry.note_id, content)
-                audit.append(
-                    self.root,
-                    actor=reviewer,
-                    action="update",
-                    note_id=entry.note_id,
-                    detail=f"via capture:{entry.id}",
-                )
-            except Exception:
+                action = "update"
+            except NoteNotFound:
                 self.vault.create(entry.note_id, content)
-                audit.append(
-                    self.root,
-                    actor=reviewer,
-                    action="create",
-                    note_id=entry.note_id,
-                    detail=f"via capture:{entry.id}",
-                )
+                action = "create"
+            audit.append(
+                self.root,
+                actor=reviewer,
+                action=action,
+                note_id=entry.note_id,
+                detail=f"via capture:{entry.id}",
+            )
         reviewed = capture.review(self.root, entry_id, verdict, reviewer, review_note)
         audit.append(
             self.root,
@@ -215,13 +291,20 @@ class Librarian:
     def ask(self, question: str) -> Answer:
         """Answer from the vault when possible; otherwise log it as missing
         information (a ``request`` entry) for future retrieval."""
-        if not question.strip():
+        clean = question.strip()
+        if not clean:
             raise ValueError("question must not be empty")
-        names = self.vault.search_names(question)
-        hits = self.vault.search_content(question)
-        for hit in hits:
-            if hit.id not in names:
-                names.append(hit.id)
+        names: list[str] = []
+        hits: list[SearchHit] = []
+        for token in _tokens(clean):
+            for nid in self.vault.search_names(token):
+                if nid not in names:
+                    names.append(nid)
+            for hit in self.vault.search_content(token, limit=5):
+                if hit.id not in names:
+                    names.append(hit.id)
+                if all(h.id != hit.id for h in hits):
+                    hits.append(hit)
         if names:
             return Answer(
                 found=True,
@@ -230,9 +313,18 @@ class Librarian:
                 hits=hits,
                 message=f"Found {len(names)} matching note(s).",
             )
-        entry = self.give_feedback(
-            "request", f"Unanswered question: {question.strip()}"
-        )
+        body = f"Unanswered question: {clean}"
+        for existing in capture.list_entries(self.root, "pending"):
+            if existing.kind == "request" and existing.body == body:
+                return Answer(
+                    found=False,
+                    question=question,
+                    note_ids=[],
+                    hits=[],
+                    entry_id=existing.id,
+                    message="No matching notes. Already logged for future retrieval.",
+                )
+        entry = self.give_feedback("request", body)
         return Answer(
             found=False,
             question=question,
@@ -241,3 +333,8 @@ class Librarian:
             entry_id=entry.id,
             message="No matching notes. Logged as missing information for future retrieval.",
         )
+
+
+def librarian(actor: str = "api") -> Librarian:
+    """Shared factory: both adapters (REST, MCP) build Librarians here."""
+    return Librarian(vault_root(), actor=actor)

@@ -27,12 +27,22 @@ let captureFilter = "pending";
 function esc(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+function safeUrl(url) {
+  const clean = url.trim().replace(/"/g, "%22");
+  const scheme = clean.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+  if (scheme && !/^(https?|mailto)$/i.test(scheme[1])) return null;
+  return clean;
+}
 function inlineMd(s) {
   let out = esc(s);
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => {
+    const safe = safeUrl(url);
+    if (safe === null) return esc(m);
+    return `<a href="${safe}" target="_blank" rel="noopener">${text}</a>`;
+  });
   out = out.replace(/\[\[([^\]]+)\]\]/g, (m, p1) => `<span class="wiki-link" data-target="${esc(p1)}">${esc(p1)}</span>`);
   return out;
 }
@@ -395,7 +405,7 @@ $("save-btn").addEventListener("click", async () => {
   await openNote(currentId); // stay on the page, re-rendered from server state
 });
 $("delete-btn").addEventListener("click", async () => {
-  openModal("Delete page?", `“${currentId}” will be removed from the vault. This is audited.`, "", "Delete", async () => {
+  openModal("Delete page?", `“${currentId}” will be moved to trash (restorable). This is audited.`, "", "Delete", async () => {
     await api.send(`/api/notes/${encodeURIComponent(currentId)}`, "DELETE");
     currentId = null;
     $("page-view").classList.add("hidden");
@@ -593,19 +603,23 @@ async function refreshCapture() {
       ok.className = "btn-primary";
       ok.textContent = "Apply";
       ok.addEventListener("click", async () => {
-        let content = null;
-        if (e.note_id) {
-          try {
-            const note = await api.get(`/api/notes/${encodeURIComponent(e.note_id)}`);
-            content = `${note.content}\n\n${e.body}\n`;
-          } catch {
-            content = `${e.body}\n`;
-          }
+        if (!e.note_id) {
+          await api.send(`/api/capture/${e.id}/review`, "POST", {
+            verdict: "applied",
+            reviewer: "ui",
+          });
+          refreshCapture();
+          updateBadge();
+          return;
         }
-        await api.send(`/api/capture/${e.id}/review`, "POST", { verdict: "applied", reviewer: "ui", content });
-        refreshCapture();
-        updateBadge();
-        renderTree();
+        let current = "";
+        try {
+          current = (await api.get(`/api/notes/${encodeURIComponent(e.note_id)}`)).content;
+        } catch {
+          current = "";
+        }
+        const glue = current === "" ? "" : current.endsWith("\n") ? "\n" : "\n\n";
+        openApplyModal(e, `${current}${glue}${e.body}\n`);
       });
       const approve = document.createElement("button");
       approve.className = "btn-default";
@@ -694,6 +708,37 @@ $("modal-ok").addEventListener("click", async () => {
   const val = $("modal-input").value;
   closeModal();
   if (fn) await fn(val);
+});
+let applyEntry = null;
+function openApplyModal(entry, draft) {
+  applyEntry = entry;
+  $("apply-desc").textContent = `Review and edit, then apply to “${entry.note_id}”. Feedback: ${entry.body}`;
+  $("apply-content").value = draft;
+  $("apply-modal").classList.remove("hidden");
+  $("apply-content").focus();
+}
+function closeApplyModal() {
+  $("apply-modal").classList.add("hidden");
+  applyEntry = null;
+}
+$("apply-cancel").addEventListener("click", closeApplyModal);
+$("apply-modal").addEventListener("click", (ev) => {
+  if (ev.target.id === "apply-modal") closeApplyModal();
+});
+$("apply-ok").addEventListener("click", async () => {
+  const entry = applyEntry;
+  const content = $("apply-content").value;
+  closeApplyModal();
+  if (!entry) return;
+  await api.send(`/api/capture/${entry.id}/review`, "POST", {
+    verdict: "applied",
+    reviewer: "ui",
+    content,
+  });
+  if (currentId === entry.note_id) await openNote(currentId);
+  refreshCapture();
+  updateBadge();
+  renderTree();
 });
 function createPage() {
   openModal("Create page", "Page id (use slashes for folders, e.g. projects/homelab):", "", "Create", async (id) => {

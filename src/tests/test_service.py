@@ -8,7 +8,7 @@ import pytest
 
 from mysharedbrain import audit, capture
 from mysharedbrain.service import Librarian
-from mysharedbrain.vault import NoteNotFound
+from mysharedbrain.vault import NoteExists, NoteNotFound
 
 
 def test_mutations_are_audited(vault_dir: Path) -> None:
@@ -85,6 +85,55 @@ def test_process_capture_reject_leaves_vault_alone(vault_dir: Path) -> None:
     reviewed = lib.process_capture(entry.id, "rejected", "curator", review_note="wrong")
     assert reviewed.status == "rejected"
     assert lib.read_note("homelab").content == "old ip"
+
+
+def test_ask_tokenizes_natural_language(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("homelab", "k3s runs on elitedesk")
+    answer = lib.ask("what is the IP of elitedesk?")
+    assert answer.found is True
+    assert "homelab" in answer.note_ids
+
+
+def test_ask_dedupes_pending_requests(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    first = lib.ask("obscure topic nobody wrote down")
+    second = lib.ask("obscure topic nobody wrote down")
+    assert first.entry_id == second.entry_id
+    assert len(capture.list_entries(vault_dir, "pending")) == 1
+
+
+def test_process_capture_applied_requires_content(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    entry = lib.give_feedback("edit", "fix it", note_id="homelab")
+    with pytest.raises(ValueError, match="requires content"):
+        lib.process_capture(entry.id, "applied", "curator")
+    assert capture.list_entries(vault_dir, "pending")[0].id == entry.id
+
+
+def test_delete_trashes_and_restores(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("projects/a", "content")
+    lib.delete_note("projects/a")
+    assert lib.list_notes() == []
+    assert (vault_dir / ".brain" / "trash" / "projects" / "a.md").is_file()
+    with pytest.raises(NoteNotFound):
+        lib.delete_note("projects/a")
+    restored = lib.restore_note("projects/a")
+    assert restored.content == "content"
+    assert lib.list_notes() == ["projects/a"]
+    with pytest.raises(NoteNotFound):
+        lib.restore_note("never-existed")
+
+
+def test_restore_conflicts_with_existing(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("a", "v1")
+    lib.delete_note("a")
+    lib.create_note("a", "v2")
+    with pytest.raises(NoteExists):
+        lib.restore_note("a")
+    assert lib.read_note("a").content == "v2"
 
 
 def test_process_capture_unknown_entry_raises(vault_dir: Path) -> None:

@@ -35,6 +35,18 @@ def test_notes_crud_roundtrip(vault_dir: Path) -> None:
     assert c.get("/api/notes/todo").status_code == 404
 
 
+def test_delete_trashes_and_restore_endpoint(vault_dir: Path) -> None:
+    c = client(vault_dir)
+    c.post("/api/notes", json={"id": "gone", "content": "data"})
+    assert c.delete("/api/notes/gone").status_code == 204
+    assert c.get("/api/notes/gone").status_code == 404
+    assert c.get("/api/notes").json() == {"notes": []}
+    restored = c.post("/api/notes/gone/restore").json()
+    assert restored == {"id": "gone", "content": "data"}
+    assert c.post("/api/notes/gone/restore").status_code == 404
+    assert c.post("/api/notes/never/restore").status_code == 404
+
+
 def test_notes_move_and_search(vault_dir: Path) -> None:
     c = client(vault_dir)
     c.post("/api/notes", json={"id": "old", "content": "elitedesk ip"})
@@ -69,7 +81,7 @@ def test_feedback_capture_review_flow(vault_dir: Path) -> None:
         c.post(
             f"/api/capture/{entry_id}/review", json={"verdict": "rejected"}
         ).status_code
-        == 400
+        == 409
     )
     assert (
         c.post("/api/capture/nope/review", json={"verdict": "rejected"}).status_code

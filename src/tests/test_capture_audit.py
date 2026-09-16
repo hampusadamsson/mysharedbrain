@@ -56,6 +56,24 @@ def test_review_rejects_unknown_and_double_review(vault_dir: Path) -> None:
         capture.review(vault_dir, entry.id, "rejected", "curator")
 
 
+def test_capture_log_is_append_only(vault_dir: Path) -> None:
+    first = capture.submit(vault_dir, kind="request", body="q1")
+    second = capture.submit(vault_dir, kind="request", body="q2")
+    capture.review(vault_dir, first.id, "approved", "curator")
+    entries = capture.list_entries(vault_dir)
+    assert [(e.id, e.status) for e in entries] == [
+        (first.id, "approved"),
+        (second.id, "pending"),
+    ]
+    # legacy single-line format (pre-append-only) still folds
+    legacy = vault_dir / ".brain" / "capture.jsonl"
+    with legacy.open("a", encoding="utf-8") as fh:
+        fh.write(
+            '{"id": "old1", "ts": "t", "kind": "request", "body": "old", "note_id": "", "status": "applied", "reviewer": "c", "review_note": ""}\n'
+        )
+    assert capture.list_entries(vault_dir, "applied")[0].id == "old1"
+
+
 def test_audit_appends_and_reads_newest_first(vault_dir: Path) -> None:
     assert audit.read_log(vault_dir) == []
     audit.append(vault_dir, actor="mcp", action="create", note_id="a")

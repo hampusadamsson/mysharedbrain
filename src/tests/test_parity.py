@@ -23,6 +23,7 @@ TOOL_ROUTES: dict[str, set[tuple[str, str]]] = {
     "append_note": {("POST", ID + "/append")},
     "patch_note": {("PATCH", ID)},
     "delete_note": {("DELETE", ID)},
+    "restore_note": {("POST", ID + "/restore")},
     "move_note": {("POST", ID + "/move")},
     "search_notes": {("GET", "/api/search")},
     "search_by_tag": {("GET", "/api/tags/{tag}")},

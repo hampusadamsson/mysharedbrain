@@ -19,20 +19,20 @@ async def call(tool: str, args: dict[str, object]) -> dict[str, object]:
 
 async def test_mcp_crud_and_search(vault_dir: Path) -> None:
     assert await call("create_note", {"note_id": "todo", "content": "milk"}) == {
-        "ok": "true",
+        "ok": True,
         "id": "todo",
     }
-    assert (await call("create_note", {"note_id": "todo"}))["ok"] == "false"
+    assert (await call("create_note", {"note_id": "todo"}))["ok"] is False
     assert await call("read_note", {"note_id": "todo"}) == {
-        "ok": "true",
+        "ok": True,
         "id": "todo",
         "content": "milk",
     }
     assert await call("update_note", {"note_id": "todo", "content": "oat"}) == {
-        "ok": "true",
+        "ok": True,
         "id": "todo",
     }
-    assert (await call("read_note", {"note_id": "missing"}))["ok"] == "false"
+    assert (await call("read_note", {"note_id": "missing"}))["ok"] is False
     search = await call("search_notes", {"query": "oat"})
     assert search["names"] == []  # name search matches ids only
     assert [h["id"] for h in search["content"]] == ["todo"]  # type: ignore[union-attr]
@@ -40,9 +40,15 @@ async def test_mcp_crud_and_search(vault_dir: Path) -> None:
         "id"
     ] == "shopping"
     assert await call("delete_note", {"note_id": "shopping"}) == {
-        "ok": "true",
+        "ok": True,
         "id": "shopping",
     }
+    assert (await call("read_note", {"note_id": "shopping"}))["ok"] is False
+    assert await call("restore_note", {"note_id": "shopping"}) == {
+        "ok": True,
+        "id": "shopping",
+    }
+    assert (await call("read_note", {"note_id": "shopping"}))["ok"] is True
 
 
 async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
@@ -50,16 +56,16 @@ async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
     fb = await call(
         "give_feedback", {"kind": "edit", "body": "new ip", "note_id": "homelab"}
     )
-    assert fb == {"ok": "true", "id": fb["id"], "status": "pending"}
+    assert fb == {"ok": True, "id": fb["id"], "status": "pending"}
     bad = await call("give_feedback", {"kind": "bogus", "body": "x"})
-    assert bad["ok"] == "false"
+    assert bad["ok"] is False
     rev = await call(
         "review_capture",
         {"entry_id": fb["id"], "verdict": "approved", "reviewer": "curator"},
     )
-    assert rev == {"ok": "true", "id": fb["id"], "status": "approved"}
+    assert rev == {"ok": True, "id": fb["id"], "status": "approved"}
     dup = await call("review_capture", {"entry_id": fb["id"], "verdict": "rejected"})
-    assert dup["ok"] == "false"
+    assert dup["ok"] is False
     listed = await call("list_capture", {"status": "approved"})
     found_ids = [e["id"] for e in cast("list[dict[str, str]]", listed["entries"])]
     assert fb["id"] in found_ids
@@ -78,39 +84,49 @@ async def test_mcp_obsidian_parity_tools(vault_dir: Path) -> None:
     )
     await call("create_note", {"note_id": "other", "content": "o"})
     assert await call("append_note", {"note_id": "doc", "content": "tail"}) == {
-        "ok": "true",
+        "ok": True,
         "id": "doc",
     }
     assert (await call("append_note", {"note_id": "gone", "content": "x"}))[
         "ok"
-    ] == "false"
+    ] is False
     assert await call(
         "patch_note", {"note_id": "doc", "heading": "A", "content": "new"}
     ) == {
-        "ok": "true",
+        "ok": True,
         "id": "doc",
     }
     no_section = await call(
         "patch_note", {"note_id": "doc", "heading": "Nope", "content": "x"}
     )
-    assert no_section["ok"] == "false"
-    assert await call("list_notes", {"limit": 1}) == {"notes": ["doc"]}
+    assert no_section["ok"] is False
+    assert await call("list_notes", {"limit": 1}) == {"ok": True, "notes": ["doc"]}
     batch = await call("read_notes", {"note_ids": ["doc", "gone"]})
     found = cast("list[dict[str, str]]", batch["notes"])
     assert [n["id"] for n in found] == ["doc"]
     assert batch["missing"] == ["gone"]
     assert await call("list_directory", {}) == {
+        "ok": True,
         "folders": [],
         "notes": ["doc", "other"],
     }
     updated = await call(
         "set_frontmatter", {"note_id": "doc", "updates": {"tags": ["t1"]}}
     )
-    assert updated == {"ok": "true", "id": "doc"}
-    assert await call("get_frontmatter", {"note_id": "doc"}) == {"tags": ["t1"]}
-    assert await call("search_by_tag", {"tag": "T1"}) == {"notes": ["doc"]}
-    assert await call("get_backlinks", {"note_id": "other"}) == {"backlinks": ["doc"]}
-    assert await call("get_outgoing", {"note_id": "doc"}) == {"links": ["other"]}
+    assert updated == {"ok": True, "id": "doc"}
+    assert await call("get_frontmatter", {"note_id": "doc"}) == {
+        "ok": True,
+        "tags": ["t1"],
+    }
+    assert await call("search_by_tag", {"tag": "T1"}) == {"ok": True, "notes": ["doc"]}
+    assert await call("get_backlinks", {"note_id": "other"}) == {
+        "ok": True,
+        "backlinks": ["doc"],
+    }
+    assert await call("get_outgoing", {"note_id": "doc"}) == {
+        "ok": True,
+        "links": ["other"],
+    }
     changes = await call("recent_changes", {"limit": 5})
     assert len(cast("list[object]", changes["changes"])) > 0
 

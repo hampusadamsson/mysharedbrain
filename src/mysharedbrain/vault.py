@@ -18,6 +18,7 @@ import yaml
 
 NOTE_SUFFIX = ".md"
 INTERNAL_DIRS = {".brain"}
+TRASH_DIR = Path(".brain/trash")
 
 
 class VaultError(Exception):
@@ -54,6 +55,7 @@ class SearchHit:
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 _LINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+_RG_LINE_RE = re.compile(r"^(.+?):(\d+):(.*)$")
 
 
 def split_frontmatter(content: str) -> tuple[dict[str, object], str]:
@@ -127,11 +129,27 @@ class Vault:
         return Note(id="/".join(Path(_validate(note_id)).parts), content=content)
 
     def delete(self, note_id: str) -> None:
+        """Soft-delete: move the note to ``.brain/trash/`` (restorable)."""
         path = self._path(note_id)
         if not path.is_file():
             raise NoteNotFound(f"note not found: {note_id!r}")
-        path.unlink()
+        target = self.root / TRASH_DIR / (_validate(note_id) + NOTE_SUFFIX)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        path.rename(target)
         self._prune_empty_parents(path.parent)
+
+    def restore(self, note_id: str) -> Note:
+        """Move a trashed note back into the vault."""
+        target = self.root / TRASH_DIR / (_validate(note_id) + NOTE_SUFFIX)
+        if not target.is_file():
+            raise NoteNotFound(f"no trashed note: {note_id!r}")
+        dst = self._path(note_id)
+        if dst.exists():
+            raise NoteExists(f"note already exists: {note_id!r}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        target.rename(dst)
+        self._prune_empty_parents(target.parent)
+        return self.read(note_id)
 
     def move(self, note_id: str, new_id: str) -> Note:
         src = self._path(note_id)
@@ -337,6 +355,10 @@ class Vault:
                 "--line-number",
                 "--max-count",
                 "3",
+                "--glob",
+                "*.md",
+                "--glob",
+                "!.brain/**",
                 "--",
                 query,
                 ".",
@@ -349,15 +371,18 @@ class Vault:
         )
         hits: dict[str, list[str]] = {}
         for line in proc.stdout.splitlines():
-            path_part, _, excerpt = line.partition(":")
-            file_path = self.root / path_part.split(":")[0]
+            match = _RG_LINE_RE.match(line)
+            if not match:
+                continue
+            file_path = self.root / match.group(1)
             if file_path.suffix != NOTE_SUFFIX or self._is_internal(file_path):
                 continue
             note_id = file_path.relative_to(self.root).as_posix()[: -len(NOTE_SUFFIX)]
-            hits.setdefault(note_id, []).append(excerpt.strip()[:200])
+            hits.setdefault(note_id, []).append(match.group(3).strip()[:200])
             if len(hits) >= limit:
                 break
-        return [SearchHit(id=k, excerpts=v) for k, v in list(hits.items())[:limit]]
+        ordered = sorted(hits.items())[:limit]
+        return [SearchHit(id=k, excerpts=v) for k, v in ordered]
 
     def _search_fallback(self, query: str, limit: int) -> list[SearchHit]:
         needle = query.lower()

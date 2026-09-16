@@ -3,31 +3,43 @@
 Decoupling contract: the UI (``frontend/``) and any MCP client talk to the
 librarian only through HTTP JSON (this app) or MCP tools (``mcp.py``). Both
 adapters delegate to :class:`Librarian` — the single audited mutation path.
+
+Domain errors map to HTTP codes in one place (``_STATUS``); handlers stay
+three lines each.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mysharedbrain import audit, capture
-from mysharedbrain.service import Librarian
-from mysharedbrain.vault import InvalidNoteId, NoteExists, NoteNotFound, SectionNotFound
+from mysharedbrain.service import librarian, vault_root
+from mysharedbrain.vault import (
+    InvalidNoteId,
+    NoteExists,
+    NoteNotFound,
+    SectionNotFound,
+)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
+_NOT_FOUND = (NoteNotFound, SectionNotFound, capture.EntryNotFound)
+_CONFLICT = (NoteExists, capture.EntryAlreadyReviewed)
 
-def vault_root() -> Path:
-    return Path(os.environ.get("VAULT_DIR", "vault")).resolve()
 
-
-def librarian(actor: str = "api") -> Librarian:
-    return Librarian(vault_root(), actor=actor)
+def _http_error(request: Request, exc: Exception) -> JSONResponse:
+    if isinstance(exc, _NOT_FOUND):
+        code = 404
+    elif isinstance(exc, _CONFLICT):
+        code = 409
+    else:
+        code = 400  # InvalidNoteId, ValueError: caller-supplied values
+    return JSONResponse(status_code=code, content={"detail": str(exc)})
 
 
 class NoteIn(BaseModel):
@@ -160,6 +172,10 @@ class HealthOut(BaseModel):
     status: str
 
 
+def _note(note_id: str, content: str) -> dict[str, str]:
+    return {"id": note_id, "content": content}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="MySharedBrain",
@@ -170,9 +186,14 @@ def create_app() -> FastAPI:
             "Interactive docs here; MCP tools mirror every route."
         ),
     )
+    for exc in (*_NOT_FOUND, *_CONFLICT, InvalidNoteId, ValueError):
+        app.exception_handler(exc)(_http_error)
 
     @app.get(
-        "/health", response_model=HealthOut, tags=["system"], summary="Health check"
+        "/health",
+        response_model=HealthOut,
+        tags=["system"],
+        summary="Health check",
     )
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -220,15 +241,10 @@ def create_app() -> FastAPI:
         summary="Replace/append a section under a heading",
     )
     def patch_note(note_id: str, payload: PatchIn) -> dict[str, str]:
-        try:
-            note = librarian().patch_note(
-                note_id, payload.heading, payload.content, payload.mode
-            )
-        except (NoteNotFound, SectionNotFound) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (InvalidNoteId, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().patch_note(
+            note_id, payload.heading, payload.content, payload.mode
+        )
+        return _note(note.id, note.content)
 
     @app.post(
         "/api/notes/{note_id:path}/append",
@@ -237,13 +253,8 @@ def create_app() -> FastAPI:
         summary="Append content to a note",
     )
     def append_note(note_id: str, payload: AppendIn) -> dict[str, str]:
-        try:
-            note = librarian().append_note(note_id, payload.content)
-        except NoteNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except InvalidNoteId as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().append_note(note_id, payload.content)
+        return _note(note.id, note.content)
 
     @app.get(
         "/api/notes/{note_id:path}/meta",
@@ -251,10 +262,7 @@ def create_app() -> FastAPI:
         summary="A note's YAML frontmatter",
     )
     def get_frontmatter(note_id: str) -> dict[str, object]:
-        try:
-            return librarian().get_frontmatter(note_id)
-        except (NoteNotFound, InvalidNoteId) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return librarian().get_frontmatter(note_id)
 
     @app.put(
         "/api/notes/{note_id:path}/meta",
@@ -263,13 +271,8 @@ def create_app() -> FastAPI:
         summary="Merge keys into frontmatter",
     )
     def set_frontmatter(note_id: str, payload: FrontmatterIn) -> dict[str, str]:
-        try:
-            note = librarian().set_frontmatter(note_id, payload.updates)
-        except NoteNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except InvalidNoteId as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().set_frontmatter(note_id, payload.updates)
+        return _note(note.id, note.content)
 
     @app.get(
         "/api/notes/{note_id:path}/outgoing",
@@ -278,10 +281,7 @@ def create_app() -> FastAPI:
         summary="[[Link]] targets of a note",
     )
     def get_outgoing(note_id: str) -> dict[str, list[str]]:
-        try:
-            return {"links": librarian().get_outgoing(note_id)}
-        except (NoteNotFound, InvalidNoteId) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"links": librarian().get_outgoing(note_id)}
 
     @app.get(
         "/api/notes/{note_id:path}/backlinks",
@@ -290,10 +290,7 @@ def create_app() -> FastAPI:
         summary="Notes linking to this one",
     )
     def get_backlinks(note_id: str) -> dict[str, list[str]]:
-        try:
-            return {"links": librarian().get_backlinks(note_id)}
-        except (NoteNotFound, InvalidNoteId) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"links": librarian().get_backlinks(note_id)}
 
     @app.get(
         "/api/tags/{tag}",
@@ -312,13 +309,8 @@ def create_app() -> FastAPI:
         summary="Create a note",
     )
     def create_note(payload: NoteIn) -> dict[str, str]:
-        try:
-            note = librarian().create_note(payload.id, payload.content)
-        except NoteExists as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except InvalidNoteId as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().create_note(payload.id, payload.content)
+        return _note(note.id, note.content)
 
     @app.get(
         "/api/notes/{note_id:path}",
@@ -327,11 +319,8 @@ def create_app() -> FastAPI:
         summary="Read a note by id",
     )
     def read_note(note_id: str) -> dict[str, str]:
-        try:
-            note = librarian().read_note(note_id)
-        except (NoteNotFound, InvalidNoteId) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().read_note(note_id)
+        return _note(note.id, note.content)
 
     @app.put(
         "/api/notes/{note_id:path}",
@@ -340,25 +329,27 @@ def create_app() -> FastAPI:
         summary="Replace a note's content",
     )
     def update_note(note_id: str, payload: ContentIn) -> dict[str, str]:
-        try:
-            note = librarian().update_note(note_id, payload.content)
-        except NoteNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except InvalidNoteId as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().update_note(note_id, payload.content)
+        return _note(note.id, note.content)
 
     @app.delete(
         "/api/notes/{note_id:path}",
         status_code=204,
         tags=["notes"],
-        summary="Delete a note",
+        summary="Soft-delete a note (restorable from trash)",
     )
     def delete_note(note_id: str) -> None:
-        try:
-            librarian().delete_note(note_id)
-        except (NoteNotFound, InvalidNoteId) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        librarian().delete_note(note_id)
+
+    @app.post(
+        "/api/notes/{note_id:path}/restore",
+        response_model=NoteOut,
+        tags=["notes"],
+        summary="Restore a trashed note",
+    )
+    def restore_note(note_id: str) -> dict[str, str]:
+        note = librarian().restore_note(note_id)
+        return _note(note.id, note.content)
 
     @app.post(
         "/api/notes/{note_id:path}/move",
@@ -367,13 +358,8 @@ def create_app() -> FastAPI:
         summary="Move/rename a note",
     )
     def move_note(note_id: str, payload: MoveIn) -> dict[str, str]:
-        try:
-            note = librarian().move_note(note_id, payload.to)
-        except NoteNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (NoteExists, InvalidNoteId) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"id": note.id, "content": note.content}
+        note = librarian().move_note(note_id, payload.to)
+        return _note(note.id, note.content)
 
     @app.get(
         "/api/search",
@@ -398,12 +384,7 @@ def create_app() -> FastAPI:
         summary="Queue feedback (edit/missing/request)",
     )
     def give_feedback(payload: FeedbackIn) -> dict[str, str]:
-        try:
-            entry = librarian().give_feedback(
-                payload.kind, payload.body, payload.note_id
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        entry = librarian().give_feedback(payload.kind, payload.body, payload.note_id)
         return {"id": entry.id, "status": entry.status}
 
     @app.get(
@@ -423,18 +404,13 @@ def create_app() -> FastAPI:
         summary="Review an entry: applied/approved/rejected",
     )
     def review_capture(entry_id: str, payload: ReviewIn) -> dict[str, str]:
-        try:
-            entry = librarian().process_capture(
-                entry_id,
-                payload.verdict,
-                payload.reviewer,
-                payload.content,
-                payload.review_note,
-            )
-        except capture.EntryNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except (capture.EntryAlreadyReviewed, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        entry = librarian().process_capture(
+            entry_id,
+            payload.verdict,
+            payload.reviewer,
+            payload.content,
+            payload.review_note,
+        )
         return {"id": entry.id, "status": entry.status}
 
     @app.post(
@@ -444,10 +420,7 @@ def create_app() -> FastAPI:
         summary="Ask the librarian (misses are logged)",
     )
     def ask_question(payload: QuestionIn) -> dict[str, object]:
-        try:
-            answer = librarian().ask(payload.question)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        answer = librarian().ask(payload.question)
         return {
             "found": answer.found,
             "question": answer.question,

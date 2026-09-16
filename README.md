@@ -54,7 +54,8 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 | `update_note` | Update note by id |
 | `append_note` | Append to a note (prefer over rewrites) |
 | `patch_note` | Replace/append a section under a heading |
-| `delete_note` | Delete note by id |
+| `delete_note` | Soft-delete a note to trash |
+| `restore_note` | Restore a trashed note |
 | `move_note` | Move/rename note |
 | `search_notes` | Search names + content (ripgrep) |
 | `search_by_tag` | Notes with a frontmatter tag |
@@ -81,7 +82,7 @@ Add to an MCP client (stdio):
 
 ## REST API
 
-Notes `POST/GET/PUT/DELETE/PATCH /api/notes…` (+ `/move`, `/append`, `/batch`),
+Notes `POST/GET/PUT/DELETE/PATCH /api/notes…` (+ `/move`, `/append`, `/batch`, `/restore`),
 `GET /api/browse`, `/api/notes/{id}/{meta,outgoing,backlinks}`, `/api/tags/{tag}`,
 `GET /api/search?q=`, `POST /api/feedback`, `GET /api/capture`,
 `POST /api/capture/{id}/review`, `POST /api/request`, `GET /api/audit`, `GET /health`.
