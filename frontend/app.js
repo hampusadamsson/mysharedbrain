@@ -372,6 +372,8 @@ async function openNote(id) {
   $("results-view").classList.add("hidden");
   $("page-view").classList.remove("hidden");
   $("page-title").textContent = note.id.split("/").pop();
+  $("title-input").value = note.id;
+  $("page-error").classList.add("hidden");
   breadcrumbs(note.id);
   $("byline-text").textContent = "You are viewing a vault page · markdown source";
   $("page-render").innerHTML = renderMarkdown(note.content || "*Empty page — hit Edit to write.*");
@@ -392,6 +394,8 @@ $("page-render").addEventListener("click", (ev) => {
 function setEditing(on) {
   editing = on;
   $("page-render").classList.toggle("hidden", on);
+  $("page-title").classList.toggle("hidden", on);
+  $("title-input").classList.toggle("hidden", !on);
   $("editor").classList.toggle("hidden", !on);
   $("edit-btn").classList.toggle("hidden", on);
   $("save-btn").classList.toggle("hidden", !on);
@@ -399,10 +403,30 @@ function setEditing(on) {
   if (on) $("editor").focus();
 }
 $("edit-btn").addEventListener("click", () => setEditing(true));
-$("cancel-btn").addEventListener("click", () => setEditing(false));
+$("cancel-btn").addEventListener("click", () => {
+  $("title-input").value = currentId;
+  $("page-error").classList.add("hidden");
+  setEditing(false);
+});
 $("save-btn").addEventListener("click", async () => {
-  await api.send(`/api/notes/${encodeURIComponent(currentId)}`, "PUT", { content: $("editor").value });
-  await openNote(currentId); // stay on the page, re-rendered from server state
+  const errBox = $("page-error");
+  errBox.classList.add("hidden");
+  const newId = $("title-input").value.trim();
+  if (!newId) {
+    errBox.textContent = "Page id must not be empty.";
+    errBox.classList.remove("hidden");
+    return;
+  }
+  try {
+    await api.send(`/api/notes/${encodeURIComponent(currentId)}`, "PUT", { content: $("editor").value });
+    if (newId !== currentId) {
+      await api.send(`/api/notes/${encodeURIComponent(currentId)}/move`, "POST", { to: newId });
+    }
+    await openNote(newId); // stay on the page, re-rendered from server state
+  } catch (err) {
+    errBox.textContent = String(err);
+    errBox.classList.remove("hidden");
+  }
 });
 $("delete-btn").addEventListener("click", async () => {
   openModal("Delete page?", `“${currentId}” will be moved to trash (restorable). This is audited.`, "", "Delete", async () => {
