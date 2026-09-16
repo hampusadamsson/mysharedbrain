@@ -42,7 +42,9 @@ export default defineConfig(
 		// 'svelte/button-has-type': 'error'
 		rules: {
 			// shadcn-svelte registry components use plain hrefs (same as golfkompis)
-			'svelte/no-navigation-without-resolve': 'off'
+			'svelte/no-navigation-without-resolve': 'off',
+			// markdown HTML is sanitized by DOMPurify before {@html} ($lib/markdown.ts)
+			'svelte/no-at-html-tags': 'off'
 		}
 	}
 );

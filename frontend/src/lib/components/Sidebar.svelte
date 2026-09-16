@@ -2,8 +2,14 @@
 	import { page } from '$app/state';
 	import { Activity, FileText, Inbox, MessagesSquare } from '@lucide/svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { pageUrl } from '$lib/notes';
+	import { buildTree } from '$lib/notes';
 	import { space } from '$lib/stores/space.svelte';
+	import TreeItem from './TreeItem.svelte';
+
+	const currentId = $derived(
+		page.url.pathname.startsWith('/p/') ? decodeURIComponent(page.url.pathname.slice(3)) : ''
+	);
+	const tree = $derived(buildTree(space.notes));
 
 	const NAV = [
 		{ href: '/', label: 'Pages', icon: FileText },
@@ -51,28 +57,15 @@
 </nav>
 
 <div class="px-4 pt-4 pb-1 text-[11px] font-bold tracking-wider text-muted-foreground">
-	PAGES · {space.notes.length}
+	PAGE TREE · {space.notes.length}
 </div>
-<ul class="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+<div class="flex-1 overflow-y-auto px-2 pb-2">
 	{#if space.notes.length === 0}
-		<li class="px-2.5 py-1.5 text-sm text-muted-foreground">No pages yet</li>
+		<p class="px-2.5 py-1.5 text-sm text-muted-foreground">No pages yet</p>
 	{:else}
-		{#each space.notes as id (id)}
-			<li>
-				<a
-					href={pageUrl(id)}
-					class="block truncate rounded-md px-2.5 py-1.5 text-sm hover:bg-muted {page.url
-						.pathname === pageUrl(id)
-						? 'bg-blue-50 font-medium text-blue-700'
-						: ''}"
-					title={id}
-				>
-					{id}
-				</a>
-			</li>
-		{/each}
+		<TreeItem nodes={tree} {currentId} />
 	{/if}
-</ul>
+</div>
 
 <div class="border-t px-4 py-3">
 	<a href="/ask" class="text-[13px] text-blue-600 hover:underline">Give feedback</a>
