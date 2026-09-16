@@ -95,9 +95,11 @@ jobs:
 
       - name: Export digest
         if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
 
       - name: Upload digest
         if: github.event_name == 'push'
