@@ -1,24 +1,37 @@
 <script lang="ts">
-	import { api, type FeedbackEntry, type FeedbackStatus } from '$lib/api/client';
+	import {
+		api,
+		FEEDBACK_STATUSES,
+		feedbackKindLabel,
+		type FeedbackEntry,
+		type FeedbackStatus
+	} from '$lib/api/client';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import Pagination from '$lib/components/Pagination.svelte';
 	import { timeAgo } from '$lib/notes';
 	import { refreshPending, refreshNotes } from '$lib/stores/space.svelte';
-	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+
+	const PAGE_SIZE = 20;
+	// Tags read as metadata, not as controls: dim them so they never compete
+	// with the action buttons beside them.
+	const TAG = 'border-border/60 font-normal text-muted-foreground';
 
 	const FILTERS: { value: FeedbackStatus | 'all'; label: string }[] = [
 		{ value: 'pending', label: 'Pending' },
-		{ value: 'applied', label: 'Applied' },
 		{ value: 'approved', label: 'Approved' },
+		{ value: 'applied', label: 'Applied' },
 		{ value: 'rejected', label: 'Rejected' },
 		{ value: 'all', label: 'All' }
 	];
 
 	let filter = $state<FeedbackStatus | 'all'>('pending');
 	let entries = $state<FeedbackEntry[]>([]);
+	let total = $state(0);
+	let offset = $state(0);
 	let loading = $state(true);
 	let applyOpen = $state(false);
 	let applying = $state<FeedbackEntry | null>(null);
@@ -28,7 +41,14 @@
 	async function load() {
 		loading = true;
 		try {
-			entries = (await api.listCapture(filter === 'all' ? undefined : filter)).entries;
+			const res = await api.listCapture(filter === 'all' ? undefined : filter, PAGE_SIZE, offset);
+			entries = res.entries;
+			total = res.total;
+			// A review can empty the last page — step back instead of showing none.
+			if (entries.length === 0 && offset > 0) {
+				offset = Math.max(0, offset - PAGE_SIZE);
+				return;
+			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : String(e));
 		} finally {
@@ -36,11 +56,24 @@
 		}
 	}
 
-	onMount(load);
 	$effect(() => {
 		void filter;
+		offset = 0;
 		void load();
 	});
+
+	async function setStatus(entry: FeedbackEntry, status: FeedbackStatus) {
+		if (status === entry.status) return;
+		try {
+			await api.setCaptureStatus(entry.id, status);
+			await load();
+			await refreshPending();
+			toast.success(`Marked ${status}`);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+			await load(); // put the control back to the stored state
+		}
+	}
 
 	function review(entry: FeedbackEntry, verdict: 'approved' | 'rejected') {
 		return async () => {
@@ -120,10 +153,13 @@
 		{#each entries as entry (entry.id)}
 			<li class="rounded-lg border p-4">
 				<div class="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">{entry.kind}</Badge>
-					<Badge variant={entry.status === 'pending' ? 'default' : 'secondary'}>
-						{entry.status}
-					</Badge>
+					<Badge variant="outline" class={TAG}>{feedbackKindLabel(entry.kind)}</Badge>
+					<Badge variant="outline" class={TAG}>{entry.status}</Badge>
+					{#if entry.automated}
+						<Badge variant="outline" class={TAG} title="Filed by the system, not a person"
+							>automated</Badge
+						>
+					{/if}
 					<span class="text-sm font-medium">{entry.note_id || 'general'}</span>
 				</div>
 				<p class="mt-2 text-sm whitespace-pre-wrap">{entry.body}</p>
@@ -132,16 +168,43 @@
 						? ` · reviewed by ${entry.reviewer}`
 						: ''}{entry.review_note ? ` · ${entry.review_note}` : ''}
 				</p>
-				{#if entry.status === 'pending'}
-					<div class="mt-3 flex gap-2">
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<label class="text-xs text-muted-foreground" for="status-{entry.id}">State</label>
+					<select
+						id="status-{entry.id}"
+						aria-label="State for {entry.kind} entry"
+						class="h-8 rounded-md border bg-transparent px-2 text-xs"
+						value={entry.status}
+						onchange={(e) => setStatus(entry, e.currentTarget.value as FeedbackStatus)}
+					>
+						{#each FEEDBACK_STATUSES as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+					{#if entry.status === 'pending'}
 						<Button size="sm" onclick={() => openApply(entry)}>Apply</Button>
 						<Button size="sm" variant="outline" onclick={review(entry, 'approved')}>Approve</Button>
 						<Button size="sm" variant="ghost" onclick={review(entry, 'rejected')}>Reject</Button>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			</li>
 		{/each}
 	</ul>
+	<div class="max-w-3xl">
+		<Pagination
+			{total}
+			limit={PAGE_SIZE}
+			{offset}
+			count={entries.length}
+			label="entry"
+			labelPlural="entries"
+			disabled={loading}
+			onchange={(next) => {
+				offset = next;
+				void load();
+			}}
+		/>
+	</div>
 {/if}
 
 <Dialog.Root bind:open={applyOpen}>

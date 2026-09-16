@@ -16,6 +16,8 @@ dependencies = [
   "pydantic-settings>=2.6.0",
   "pyyaml>=6.0.0",
   "structlog>=25.0.0",
+  "pydantic-ai-slim[mcp,openai]>=2.43.0",
+  "croniter>=6.2.4",
 ]
 
 [project.scripts]

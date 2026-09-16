@@ -17,7 +17,7 @@ export interface SearchResult {
 	content: SearchHit[];
 }
 
-export type FeedbackKind = 'edit' | 'missing' | 'request';
+export type FeedbackKind = 'edit' | 'missing' | 'request' | 'question';
 export type FeedbackStatus = 'pending' | 'applied' | 'approved' | 'rejected';
 export type ReviewVerdict = 'applied' | 'approved' | 'rejected';
 
@@ -30,14 +30,54 @@ export interface FeedbackEntry {
 	status: FeedbackStatus;
 	reviewer: string;
 	review_note: string;
+	/** Filed by the system (an unanswered question), not by a person. */
+	automated: boolean;
+}
+
+/** Human labels for the capture kinds. */
+export const FEEDBACK_KINDS: { value: FeedbackKind; label: string }[] = [
+	{ value: 'edit', label: 'Edit' },
+	{ value: 'missing', label: 'Missing info' },
+	{ value: 'request', label: 'Request' },
+	{ value: 'question', label: 'Question' }
+];
+
+/** Every state an entry can be set to, for the state dropdown. */
+export const FEEDBACK_STATUSES: { value: FeedbackStatus; label: string }[] = [
+	{ value: 'pending', label: 'Pending' },
+	{ value: 'approved', label: 'Approved' },
+	{ value: 'applied', label: 'Applied' },
+	{ value: 'rejected', label: 'Rejected' }
+];
+
+export function feedbackKindLabel(kind: string): string {
+	return FEEDBACK_KINDS.find((k) => k.value === kind)?.label ?? kind;
 }
 
 export interface AuditEntry {
 	ts: string;
 	actor: string;
 	action: string;
+	/** Coarse category: read | find | write | move | delete | capture | job | other */
+	kind: string;
 	note_id: string;
 	detail: string;
+}
+
+export interface FileStats {
+	note_id: string;
+	counts: Record<string, number>;
+	first_seen: string;
+	last_seen: string;
+	total: number;
+}
+
+export interface FileHistory {
+	entries: AuditEntry[];
+	total: number;
+	limit: number;
+	offset: number;
+	stats: FileStats;
 }
 
 export interface Answer {
@@ -47,6 +87,142 @@ export interface Answer {
 	hits: SearchHit[];
 	entry_id: string;
 	message: string;
+}
+
+export interface CaptureList {
+	entries: FeedbackEntry[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+export interface AuditList {
+	entries: AuditEntry[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+export interface ProviderConfig {
+	name: string;
+	base_url: string;
+	api_version: string;
+	options: Record<string, string>;
+}
+
+export interface AgentConfig {
+	model: string;
+	provider: ProviderConfig;
+	api_key: string;
+	api_key_env: string;
+	instructions_file: string;
+	instructions: string;
+	max_steps: number;
+	temperature: number | null;
+}
+
+/** One selectable provider, as reported by the server. */
+export interface ProviderInfo {
+	name: string;
+	available: boolean;
+	/** Constructor parameter that takes a custom endpoint ('' = none). */
+	url_param: string;
+	api_version_param: string;
+	/** Why it is unavailable, or what it needs. */
+	hint: string;
+}
+
+export interface Providers {
+	providers: ProviderInfo[];
+	current: string;
+	model: string;
+}
+
+export interface SchedulerConfig {
+	enabled: boolean;
+	tick_seconds: number;
+	run_on_start: boolean;
+}
+
+/** Remote only: a local (stdio) MCP server would be shell access. */
+export type McpTransport = 'http' | 'sse';
+
+export interface MCPServerConfig {
+	name: string;
+	transport: McpTransport;
+	url: string;
+	headers: Record<string, string>;
+	enabled: boolean;
+}
+
+export interface JobSpec {
+	id: string;
+	name: string;
+	description: string;
+	enabled: boolean;
+	every: string | null;
+	cron: string | null;
+	instructions: string;
+	instructions_file: string | null;
+	tools: string[] | null;
+	mcp_servers: string[] | null;
+	max_steps: number | null;
+}
+
+export interface BrainConfigDoc {
+	agent: AgentConfig;
+	scheduler: SchedulerConfig;
+	tools: Record<string, { enabled: boolean }>;
+	mcp_servers: MCPServerConfig[];
+	jobs: JobSpec[];
+	metadata: Record<string, string>;
+}
+
+export interface JobStatus {
+	id: string;
+	name: string;
+	enabled: boolean;
+	schedule: string;
+	next_run: string;
+	last_run: string;
+	last_status: string;
+}
+
+export interface ToolInfo {
+	name: string;
+	description: string;
+	enabled: boolean;
+}
+
+export interface McpCheck {
+	name: string;
+	ok: boolean;
+	detail: string;
+	tools: string[];
+}
+
+/** One shape for every connection check: MCP servers and the model provider. */
+export type CheckResult = McpCheck;
+
+export interface Settings {
+	config: BrainConfigDoc;
+	jobs: JobStatus[];
+	tools: ToolInfo[];
+	/** Seed file, read only — the document itself is in the database. */
+	config_path: string;
+	/** Where the settings come from: database | file | defaults. */
+	config_source: string;
+	api_key_env: string;
+	api_key_configured: boolean;
+}
+
+export interface JobRun {
+	id: number;
+	job_id: string;
+	started_at: string;
+	finished_at: string;
+	status: string;
+	detail: string;
 }
 
 export interface Directory {
@@ -85,6 +261,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(path: string) => req<T>(path);
 const post = <T>(path: string, body: unknown) =>
 	req<T>(path, { method: 'POST', body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) =>
+	req<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 
 export const api = {
 	health: () => get<{ status: string }>('/health'),
@@ -128,15 +306,23 @@ export const api = {
 	backlinks: (id: string) =>
 		get<{ links: string[] }>(`/api/notes/${encodeURIComponent(id)}/backlinks`),
 	byTag: (tag: string) => get<{ notes: string[] }>(`/api/tags/${encodeURIComponent(tag)}`),
-	search: (q: string, limit = 20, offset = 0) => {
-		const p = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+	search: (q: string, limit = 20, offset = 0, track = true) => {
+		const p = new URLSearchParams({
+			q,
+			limit: String(limit),
+			offset: String(offset),
+			track: String(track)
+		});
 		return get<SearchResult>(`/api/search?${p}`);
 	},
 
 	giveFeedback: (kind: FeedbackKind, body: string, note_id = '') =>
 		post<{ id: string; status: FeedbackStatus }>('/api/feedback', { kind, body, note_id }),
-	listCapture: (status?: FeedbackStatus) =>
-		get<{ entries: FeedbackEntry[] }>(status ? `/api/capture?status=${status}` : '/api/capture'),
+	listCapture: (status?: FeedbackStatus, limit = 50, offset = 0) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (status) p.set('status', status);
+		return get<CaptureList>(`/api/capture?${p}`);
+	},
 	reviewCapture: (
 		entry_id: string,
 		verdict: ReviewVerdict,
@@ -148,7 +334,37 @@ export const api = {
 			`/api/capture/${encodeURIComponent(entry_id)}/review`,
 			{ verdict, reviewer, content, review_note }
 		),
+	/** Override an entry's state outright — any state, no vault change. */
+	setCaptureStatus: (entry_id: string, status: FeedbackStatus, review_note = '') =>
+		put<{ id: string; status: FeedbackStatus }>(
+			`/api/capture/${encodeURIComponent(entry_id)}/status`,
+			{ status, reviewer: 'ui', review_note }
+		),
 
 	ask: (question: string) => post<Answer>('/api/request', { question }),
-	audit: (limit = 50) => get<{ entries: AuditEntry[] }>(`/api/audit?limit=${limit}`)
+	audit: (limit = 50, offset = 0, kind?: string) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (kind) p.set('kind', kind);
+		return get<AuditList>(`/api/audit?${p}`);
+	},
+
+	/** Every logged interaction with one note, with per-kind counts. */
+	noteHistory: (id: string, kind?: string, limit = 20, offset = 0) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (kind) p.set('kind', kind);
+		return get<FileHistory>(`/api/notes/${encodeURIComponent(id)}/history?${p}`);
+	},
+
+	getSettings: () => get<Settings>('/api/settings'),
+	/** Model providers this install can reach, and what each needs. */
+	modelProviders: () => get<Providers>('/api/settings/providers'),
+	updateSettings: (config: BrainConfigDoc) => put<Settings>('/api/settings', { config }),
+	runJob: (job_id: string) =>
+		post<JobRun>(`/api/settings/jobs/${encodeURIComponent(job_id)}/run`, {}),
+	jobRuns: (job_id: string, limit = 20) =>
+		get<{ runs: JobRun[] }>(`/api/settings/jobs/${encodeURIComponent(job_id)}/runs?limit=${limit}`),
+	/** Try to connect to an MCP server; reports its tools or why it failed. */
+	testMcpServer: (server: MCPServerConfig) => post<McpCheck>('/api/settings/mcp/test', server),
+	/** Ask the configured model for a one-word answer, and time it. */
+	testModel: (agent: AgentConfig) => post<CheckResult>('/api/settings/model/test', agent)
 };

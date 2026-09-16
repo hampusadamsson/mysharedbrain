@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Brain, Menu, Plus, Search } from '@lucide/svelte';
+	import { Menu, Moon, Plus, Search, Sun } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { api, type SearchResult } from '$lib/api/client';
 	import { pageUrl } from '$lib/notes';
 	import CreateDialog from '$lib/components/CreateDialog.svelte';
+	import { mode, toggleMode } from 'mode-watcher';
 
 	interface Props {
 		onmenu: () => void;
@@ -16,6 +17,10 @@
 	let results = $state<SearchResult | null>(null);
 	let createOpen = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null;
+
+	// mode-watcher resolves 'system' to the concrete mode, so this is the
+	// mode actually applied to <html> (undefined until it mounts).
+	const dark = $derived(mode.current === 'dark');
 
 	function schedule() {
 		if (timer) clearTimeout(timer);
@@ -28,7 +33,7 @@
 			return;
 		}
 		try {
-			const res = await api.search(query, 8);
+			const res = await api.search(query, 8, 0, false); // type-ahead: not logged
 			results = res;
 		} catch {
 			results = null;
@@ -57,8 +62,7 @@
 		<Menu class="size-5" />
 	</Button>
 	<a href="/" class="flex items-center gap-2 font-semibold">
-		<Brain class="size-5 text-blue-600" />
-		<span class="hidden sm:inline">MySharedBrain</span>
+		<span>MySharedBrain</span>
 	</a>
 	<div class="relative mx-auto w-full max-w-md">
 		<Search class="absolute top-2.5 left-3 size-4 text-muted-foreground" />
@@ -104,6 +108,19 @@
 			</div>
 		{/if}
 	</div>
+	<Button
+		variant="ghost"
+		size="icon"
+		onclick={toggleMode}
+		aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+		title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+	>
+		{#if dark}
+			<Sun class="size-5" />
+		{:else}
+			<Moon class="size-5" />
+		{/if}
+	</Button>
 	<Button onclick={() => (createOpen = true)} aria-label="Create page">
 		<Plus class="size-4" /> <span class="hidden sm:inline">Create</span>
 	</Button>

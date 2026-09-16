@@ -8,7 +8,8 @@ const api = vi.hoisted(() => ({
 	updateNote: vi.fn(),
 	moveNote: vi.fn(),
 	deleteNote: vi.fn(),
-	backlinks: vi.fn(async () => ({ links: [] }))
+	backlinks: vi.fn(async () => ({ links: [] })),
+	frontmatter: vi.fn(async () => ({}))
 }));
 
 vi.mock('$lib/api/client', async () => {
@@ -25,6 +26,71 @@ function setup(onchanged = vi.fn(async () => {})) {
 beforeEach(() => {
 	vi.clearAllMocks();
 	api.backlinks.mockResolvedValue({ links: [] });
+	api.frontmatter.mockResolvedValue({});
+});
+
+describe('properties', () => {
+	it('renders tags and other frontmatter above the body, not as raw text', async () => {
+		api.frontmatter.mockResolvedValue({
+			tags: ['type/daily', 'status/raw'],
+			owner: 'infra',
+			reviewed: true
+		});
+		await render(NoteView, {
+			note: {
+				id: 'journal/2026-01-01',
+				content: '---\ntags: [type/daily, status/raw]\nowner: infra\n---\n\nToday I ran things.\n'
+			},
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+
+		await expect.element(page.getByText('type/daily')).toBeVisible();
+		await expect.element(page.getByText('status/raw')).toBeVisible();
+		await expect.element(page.getByText('owner')).toBeVisible();
+		await expect.element(page.getByText('infra')).toBeVisible();
+		await expect.element(page.getByText('reviewed')).toBeVisible();
+		// body rendered, frontmatter block gone
+		await expect.element(page.getByText('Today I ran things.')).toBeVisible();
+		expect(page.getByText(/tags: \[type\/daily/).elements()).toHaveLength(0);
+	});
+
+	it('tag links search for that tag', async () => {
+		api.frontmatter.mockResolvedValue({ tags: ['type/daily'] });
+		await render(NoteView, {
+			note: {
+				id: 'journal/2026-01-01',
+				content: '---\ntags: [type/daily]\n---\nbody\n'
+			},
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+		await expect
+			.element(page.getByRole('link', { name: 'type/daily' }))
+			.toHaveAttribute('href', '/search?q=type%2Fdaily');
+	});
+
+	it('shows no panel for a note without frontmatter', async () => {
+		const { container } = await render(NoteView, {
+			note: { id: 'plain', content: '# Plain\n\ntext\n' },
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+		expect(container.querySelector('dl')).toBeNull();
+	});
+
+	it('keeps the raw block in the editor so editing cannot destroy it', async () => {
+		api.frontmatter.mockResolvedValue({ tags: ['x'] });
+		await render(NoteView, {
+			note: { id: 'n', content: '---\ntags: [x]\n---\nbody\n' },
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+		await page.getByRole('button', { name: 'Edit' }).click();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Page content' }))
+			.toHaveValue('---\ntags: [x]\n---\nbody\n');
+	});
 });
 
 describe('NoteView', () => {

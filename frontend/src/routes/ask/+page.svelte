@@ -1,22 +1,16 @@
 <script lang="ts">
-	import { api, type Answer } from '$lib/api/client';
+	import { api, FEEDBACK_KINDS, type Answer } from '$lib/api/client';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { refreshPending, space } from '$lib/stores/space.svelte';
 	import { pageUrl } from '$lib/notes';
 	import { toast } from 'svelte-sonner';
 
-	const KINDS = [
-		{ value: 'edit', label: 'Edit' },
-		{ value: 'missing', label: 'Missing info' },
-		{ value: 'request', label: 'Request' }
-	] as const;
-
 	let question = $state('');
 	let asking = $state(false);
 	let answer = $state<Answer | null>(null);
 
-	let kind = $state<'edit' | 'missing' | 'request'>('edit');
+	let kind = $state<'edit' | 'missing' | 'request' | 'question'>('edit');
 	let noteId = $state('');
 	let body = $state('');
 	let queueing = $state(false);
@@ -54,7 +48,7 @@
 
 <h1 class="text-2xl font-semibold tracking-tight">Ask the librarian</h1>
 <p class="mt-1 text-sm text-muted-foreground">
-	Answered from the vault when possible — otherwise logged as missing information for future
+	Answered from the vault when possible — otherwise filed as an automated question for future
 	retrieval.
 </p>
 
@@ -89,8 +83,8 @@
 
 <h2 class="mt-10 text-lg font-semibold">Give feedback</h2>
 <p class="mt-1 text-sm text-muted-foreground">
-	Correct the vault, flag missing info, or file a request. Everything lands in the capture queue for
-	review.
+	Correct the vault, flag missing info, file a request or ask an open question. Everything lands in
+	the capture queue for review.
 </p>
 
 <form
@@ -106,7 +100,7 @@
 			aria-label="Feedback kind"
 			class="h-9 rounded-md border bg-transparent px-2.5 text-sm"
 		>
-			{#each KINDS as option (option.value)}
+			{#each FEEDBACK_KINDS as option (option.value)}
 				<option value={option.value}>{option.label}</option>
 			{/each}
 		</select>

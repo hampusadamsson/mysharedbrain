@@ -41,6 +41,8 @@ COPY src ./src
 COPY --from=frontend-builder /app/frontend/build ./static
 
 ENV VAULT_DIR=/data/vault
+# Config lives with the data so it can be mounted (configmap/secret).
+ENV BRAIN_CONFIG=/data/brain.yaml
 RUN mkdir -p /data/vault && chown -R appuser:appgroup /app /data
 USER appuser
 

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import ParamSpec, TypeVar
 
+from fastapi import HTTPException
 from fastmcp import FastMCP
 
-from mysharedbrain import capture
+from mysharedbrain import api_settings, capture
 from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -31,6 +33,7 @@ _ERRORS = (
     InvalidNoteId,
     capture.EntryNotFound,
     capture.EntryAlreadyReviewed,
+    HTTPException,
     ValueError,
 )
 
@@ -176,6 +179,37 @@ def search_by_tag(tag: str) -> dict[str, object]:
 
 @mcp.tool
 @_errors
+def note_history(
+    note_id: str, kind: str | None = None, limit: int = 50, offset: int = 0
+) -> dict[str, object]:
+    """Every logged interaction with one note (reads, finds, edits …).
+
+    kind filters to one category: read | find | write | move | delete |
+    capture | job | other. Returned with per-kind counts for that file.
+    """
+    from mysharedbrain.audit import KINDS
+
+    if kind is not None and kind not in KINDS:
+        raise ValueError(f"unknown kind: {kind!r}")
+    lib = librarian(actor="mcp")
+    stats = lib.file_stats(note_id)
+    return {
+        "entries": [e.__dict__ for e in lib.file_history(note_id, kind, limit, offset)],
+        "total": lib.count_changes(kind=kind, note_id=note_id),
+        "limit": limit,
+        "offset": offset,
+        "stats": {
+            "note_id": stats.note_id,
+            "counts": stats.counts,
+            "first_seen": stats.first_seen,
+            "last_seen": stats.last_seen,
+            "total": stats.total,
+        },
+    }
+
+
+@mcp.tool
+@_errors
 def get_backlinks(note_id: str) -> dict[str, object]:
     """Notes linking to this one via [[links]]."""
     return {"backlinks": librarian(actor="mcp").get_backlinks(note_id)}
@@ -190,16 +224,35 @@ def get_outgoing(note_id: str) -> dict[str, object]:
 
 @mcp.tool
 @_errors
-def recent_changes(limit: int = 20) -> dict[str, object]:
-    """Latest audited vault and capture changes, newest first."""
-    entries = librarian(actor="mcp").recent_changes(limit)
-    return {"changes": [e.__dict__ for e in entries]}
+def recent_changes(limit: int = 20, offset: int = 0) -> dict[str, object]:
+    """Latest audited vault and capture changes, newest first (paged).
+
+    Returned with per-kind counts for the whole log, the same shape the per-note
+    history reports for one file.
+    """
+    lib = librarian(actor="mcp")
+    stats = lib.file_stats()
+    return {
+        "changes": [e.__dict__ for e in lib.recent_changes(limit, offset)],
+        "total": lib.count_changes(),
+        "limit": limit,
+        "offset": offset,
+        "stats": {
+            "note_id": stats.note_id,
+            "counts": stats.counts,
+            "first_seen": stats.first_seen,
+            "last_seen": stats.last_seen,
+            "total": stats.total,
+        },
+    }
 
 
 @mcp.tool
 @_errors
-def list_capture(status: str | None = None) -> dict[str, object]:
-    """List capture queue entries, optionally filtered by status."""
+def list_capture(
+    status: str | None = None, limit: int = 50, offset: int = 0
+) -> dict[str, object]:
+    """List capture queue entries, optionally filtered by status (paged)."""
     if status is not None and status not in (
         "pending",
         "applied",
@@ -208,8 +261,17 @@ def list_capture(status: str | None = None) -> dict[str, object]:
     ):
         raise ValueError(f"unknown status: {status!r}")
     lib = librarian(actor="mcp")
-    entries = lib.list_capture(status)  # type: ignore[arg-type]
-    return {"entries": [e.__dict__ for e in entries]}
+    entries = lib.list_capture(
+        capture.check_status(status) if status is not None else None, limit, offset
+    )
+    return {
+        "entries": [e.__dict__ for e in entries],
+        "total": lib.count_capture(
+            capture.check_status(status) if status is not None else None
+        ),
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @mcp.tool
@@ -228,7 +290,7 @@ def search_notes(query: str, limit: int = 20, offset: int = 0) -> dict[str, obje
 def give_feedback(kind: str, body: str, note_id: str = "") -> dict[str, object]:
     """Queue feedback: correct info, flag missing info, or file a request.
 
-    kind is one of: edit | missing | request.
+    "kind is one of: edit | missing | request | question.
     """
     lib = librarian(actor="mcp")
     entry = lib.give_feedback(kind, body, note_id)  # type: ignore[arg-type]
@@ -254,6 +316,95 @@ def review_capture(
         reviewer,
         content,
         review_note,  # type: ignore[arg-type]
+    )
+    return {"id": entry.id, "status": entry.status}
+
+
+@mcp.tool
+@_errors
+def get_settings() -> dict[str, object]:
+    """Read the brain config: agent model, tools, MCP servers and jobs."""
+    return api_settings.get_settings().model_dump()
+
+
+@mcp.tool
+@_errors
+def update_settings(config: dict[str, object]) -> dict[str, object]:
+    """Replace the brain config (agent/tools/mcp_servers/jobs/metadata)."""
+    payload = api_settings.SettingsIn(config=config)
+    return api_settings.update_settings(payload).model_dump()
+
+
+@mcp.tool
+@_errors
+def list_model_providers() -> dict[str, object]:
+    """Model providers this install can reach, and what each one needs.
+
+    A provider whose SDK is missing is listed as unavailable with the install
+    hint. Use the names when configuring provider.name in the settings.
+    """
+    from mysharedbrain.api_settings import list_providers
+
+    return list_providers().model_dump()
+
+
+@mcp.tool
+@_errors
+async def test_model(agent: dict[str, object]) -> dict[str, object]:
+    """Check that the configured model answers, and how fast.
+
+    Takes the agent config (model string, token env) and makes one tiny real
+    request. Returns ``{ok, detail}`` — ok False carries the error text.
+    """
+    from mysharedbrain.api_settings import test_model as check
+    from mysharedbrain.config import AgentConfig
+
+    result = await check(AgentConfig.model_validate(agent))
+    return result.model_dump()
+
+
+@mcp.tool
+@_errors
+async def test_mcp_server(server: dict[str, object]) -> dict[str, object]:
+    """Check that an MCP server connects, and list the tools it offers.
+
+    Returns ``{ok, detail, tools}`` — ok False carries the error text.
+    """
+    from mysharedbrain.agent import check_mcp_server
+    from mysharedbrain.config import MCPServerConfig
+
+    return asdict(await check_mcp_server(MCPServerConfig.model_validate(server)))
+
+
+@mcp.tool
+@_errors
+async def run_job(job_id: str) -> dict[str, object]:
+    """Run a scheduled librarian job immediately and return its run record."""
+    run = await api_settings.run_job(job_id)
+    return run.model_dump()
+
+
+@mcp.tool
+@_errors
+def list_job_runs(job_id: str, limit: int = 20) -> dict[str, object]:
+    """Recent runs of a scheduled job, newest first."""
+    return api_settings.job_runs(job_id, limit).model_dump()
+
+
+@mcp.tool
+@_errors
+def set_capture_status(
+    entry_id: str, status: str, reviewer: str = "mcp", review_note: str = ""
+) -> dict[str, object]:
+    """Set a capture entry's state outright: pending | applied | approved | rejected.
+
+    Use review_capture for a normal review; this is the override — it allows any
+    transition and changes the state only (no vault write).
+    """
+    if status not in capture.STATUSES:
+        raise ValueError(f"unknown status: {status!r}")
+    entry = librarian(actor="mcp").restate_capture(
+        entry_id, capture.check_status(status), reviewer, review_note
     )
     return {"id": entry.id, "status": entry.status}
 
@@ -298,7 +449,7 @@ def file_feedback(kind: str, body: str, note_id: str = "") -> str:
 @_errors
 def ask_question(question: str) -> dict[str, object]:
     """Ask the librarian. Answered from the vault when possible, otherwise
-    logged as missing information for future retrieval."""
+    filed as an automated question for future retrieval."""
     answer = librarian(actor="mcp").ask(question)
     return {
         "found": answer.found,

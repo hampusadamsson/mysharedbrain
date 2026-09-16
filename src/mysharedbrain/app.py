@@ -10,15 +10,19 @@ three lines each.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mysharedbrain import audit, capture
-from mysharedbrain.service import librarian, vault_root
+from mysharedbrain import capture
+from mysharedbrain.api_settings import router as settings_router
+from mysharedbrain.audit import KINDS, LogStats
+from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
     NoteExists,
@@ -61,12 +65,19 @@ class FeedbackIn(BaseModel):
     kind: capture.Kind = "edit"
     body: str
     note_id: str = ""
+    automated: bool = False
 
 
 class ReviewIn(BaseModel):
     verdict: capture.Verdict
     reviewer: str = "reviewer"
     content: str | None = None
+    review_note: str = ""
+
+
+class RestateIn(BaseModel):
+    status: capture.Status
+    reviewer: str = "ui"
     review_note: str = ""
 
 
@@ -143,22 +154,49 @@ class CaptureEntryOut(BaseModel):
     status: str
     reviewer: str = ""
     review_note: str = ""
+    automated: bool = False
 
 
 class CaptureListOut(BaseModel):
     entries: list[CaptureEntryOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class AuditEntryOut(BaseModel):
     ts: str
     actor: str
     action: str
+    kind: str = "other"
     note_id: str
     detail: str
 
 
+class StatsOut(BaseModel):
+    """Per-kind counts for one scope: a note, or the whole log (empty id)."""
+
+    note_id: str = ""
+    counts: dict[str, int]
+    first_seen: str = ""
+    last_seen: str = ""
+    total: int
+
+
+class FileHistoryOut(BaseModel):
+    entries: list[AuditEntryOut]
+    total: int
+    limit: int
+    offset: int
+    stats: StatsOut
+
+
 class AuditListOut(BaseModel):
     entries: list[AuditEntryOut]
+    total: int
+    limit: int
+    offset: int
+    stats: StatsOut
 
 
 class AskOut(BaseModel):
@@ -178,10 +216,35 @@ def _note(note_id: str, content: str) -> dict[str, str]:
     return {"id": note_id, "content": content}
 
 
+def _stats_out(stats: LogStats) -> dict[str, object]:
+    """One scope-stats shape, so the UI reuses a single component."""
+    return {
+        "note_id": stats.note_id,
+        "counts": stats.counts,
+        "first_seen": stats.first_seen,
+        "last_seen": stats.last_seen,
+        "total": stats.total,
+    }
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Start/stop the job scheduler with the app (no-op when disabled)."""
+    from mysharedbrain.jobs import get_scheduler
+
+    scheduler = get_scheduler()
+    scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="MySharedBrain",
         version="0.1.0",
+        lifespan=lifespan,
         description=(
             "AI-native markdown wiki vault: notes CRUD, ripgrep search, "
             "feedback capture queue, audit log and a librarian Q&A endpoint. "
@@ -190,6 +253,8 @@ def create_app() -> FastAPI:
     )
     for exc in (*_NOT_FOUND, *_CONFLICT, InvalidNoteId, ValueError):
         app.exception_handler(exc)(_http_error)
+
+    app.include_router(settings_router)
 
     @app.get(
         "/health",
@@ -295,6 +360,32 @@ def create_app() -> FastAPI:
         return {"links": librarian().get_backlinks(note_id)}
 
     @app.get(
+        "/api/notes/{note_id:path}/history",
+        response_model=FileHistoryOut,
+        tags=["notes"],
+        summary="Interactions with one note (reads, finds, edits …)",
+    )
+    def note_history(
+        note_id: str,
+        kind: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, object]:
+        if kind is not None and kind not in KINDS:
+            raise ValueError(f"unknown kind: {kind!r}")
+        lib = librarian()
+        stats = lib.file_stats(note_id)
+        return {
+            "entries": [
+                e.__dict__ for e in lib.file_history(note_id, kind, limit, offset)
+            ],
+            "total": lib.count_changes(kind=kind, note_id=note_id),
+            "limit": limit,
+            "offset": offset,
+            "stats": _stats_out(stats),
+        }
+
+    @app.get(
         "/api/tags/{tag}",
         response_model=TagsOut,
         tags=["notes"],
@@ -369,8 +460,10 @@ def create_app() -> FastAPI:
         tags=["notes"],
         summary="Search names + content (ripgrep)",
     )
-    def search(q: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
-        result = librarian().search(q, limit, offset)
+    def search(
+        q: str, limit: int = 20, offset: int = 0, track: bool = True
+    ) -> dict[str, object]:
+        result = librarian().search(q, limit, offset, track)
         return {
             "names": result["names"],
             "content": [
@@ -383,21 +476,33 @@ def create_app() -> FastAPI:
         status_code=201,
         response_model=FeedbackOut,
         tags=["capture"],
-        summary="Queue feedback (edit/missing/request)",
+        summary="Queue feedback (edit/missing/request/question)",
     )
     def give_feedback(payload: FeedbackIn) -> dict[str, str]:
-        entry = librarian().give_feedback(payload.kind, payload.body, payload.note_id)
+        entry = librarian().give_feedback(
+            payload.kind, payload.body, payload.note_id, payload.automated
+        )
         return {"id": entry.id, "status": entry.status}
 
     @app.get(
         "/api/capture",
         response_model=CaptureListOut,
         tags=["capture"],
-        summary="List queue entries (status filter)",
+        summary="List queue entries (status filter + pagination)",
     )
-    def list_capture(status: capture.Status | None = None) -> dict[str, object]:
-        entries = capture.list_entries(vault_root(), status)
-        return {"entries": [e.__dict__ for e in entries]}
+    def list_capture(
+        status: capture.Status | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, object]:
+        lib = librarian()
+        entries = lib.list_capture(status, limit, offset)
+        return {
+            "entries": [e.__dict__ for e in entries],
+            "total": lib.count_capture(status),
+            "limit": limit,
+            "offset": offset,
+        }
 
     @app.post(
         "/api/capture/{entry_id}/review",
@@ -412,6 +517,19 @@ def create_app() -> FastAPI:
             payload.reviewer,
             payload.content,
             payload.review_note,
+        )
+        return {"id": entry.id, "status": entry.status}
+
+    @app.put(
+        "/api/capture/{entry_id}/status",
+        response_model=FeedbackOut,
+        tags=["capture"],
+        summary="Set an entry's state outright (any → any)",
+    )
+    def set_capture_status(entry_id: str, payload: RestateIn) -> dict[str, str]:
+        """Administrative override: no vault change, but always audited."""
+        entry = librarian().restate_capture(
+            entry_id, payload.status, payload.reviewer, payload.review_note
         )
         return {"id": entry.id, "status": entry.status}
 
@@ -436,10 +554,23 @@ def create_app() -> FastAPI:
         "/api/audit",
         response_model=AuditListOut,
         tags=["librarian"],
-        summary="Latest audited changes, newest first",
+        summary="Latest audited changes, newest first (filter by kind, paged)",
     )
-    def read_audit(limit: int = 100) -> dict[str, object]:
-        return {"entries": [e.__dict__ for e in audit.read_log(vault_root(), limit)]}
+    def read_audit(
+        kind: str | None = None,
+        limit: int = Query(default=100, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, object]:
+        lib = librarian()
+        return {
+            "entries": [
+                e.__dict__ for e in lib.recent_changes(limit, offset, kind=kind)
+            ],
+            "total": lib.count_changes(kind=kind),
+            "limit": limit,
+            "offset": offset,
+            "stats": _stats_out(lib.file_stats()),
+        }
 
     if STATIC_DIR.is_dir():
         # Hashed, immutable SvelteKit assets live under /_app.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Activity, FileText, Inbox, MessagesSquare } from '@lucide/svelte';
+	import { Activity, FileText, Inbox, MessagesSquare, Settings } from '@lucide/svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { buildTree } from '$lib/notes';
 	import { space } from '$lib/stores/space.svelte';
@@ -15,7 +15,8 @@
 		{ href: '/', label: 'Pages', icon: FileText },
 		{ href: '/ask', label: 'Ask the librarian', icon: MessagesSquare },
 		{ href: '/capture', label: 'Capture queue', icon: Inbox, badge: true },
-		{ href: '/activity', label: 'Activity', icon: Activity }
+		{ href: '/activity', label: 'Activity', icon: Activity },
+		{ href: '/settings', label: 'Settings', icon: Settings }
 	];
 
 	function active(href: string): boolean {

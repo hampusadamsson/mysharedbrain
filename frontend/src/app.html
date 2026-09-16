@@ -4,6 +4,23 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// SPA mode: the app is never prerendered, so mode-watcher cannot inject
+			// its head script. Apply the stored preference before first paint to
+			// avoid a light flash for dark-mode users. Key matches mode-watcher.
+			(() => {
+				try {
+					const stored = localStorage.getItem('mode-watcher-mode');
+					const dark =
+						stored === 'dark' ||
+						((stored === 'system' || !stored) &&
+							window.matchMedia('(prefers-color-scheme: dark)').matches);
+					document.documentElement.classList.toggle('dark', dark);
+				} catch {
+					/* private mode / no storage — fall back to light */
+				}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

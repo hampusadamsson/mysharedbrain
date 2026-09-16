@@ -104,8 +104,79 @@ def test_list_notes_prefix_filter(vault_dir: Path) -> None:
 def test_internal_dot_dirs_are_not_notes(vault_dir: Path) -> None:
     brain = vault_dir / ".brain"
     brain.mkdir()
-    (brain / "audit.jsonl").write_text("{}\n", encoding="utf-8")
+    (brain / "brain.db").write_text("{}", encoding="utf-8")
     assert Vault(vault_dir).list_notes() == []
+
+
+def test_symlinked_folder_cannot_escape_the_vault(
+    vault_dir: Path, tmp_path: Path
+) -> None:
+    """A symlink inside the vault must not be a way out of it.
+
+    Regression: ``sub/link -> elsewhere`` let a note id write outside the vault,
+    and ``list_notes`` never showed the result — a real file, invisible to the
+    brain. The agent picks its own note ids, so this is its reach, not a detail.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (vault_dir / "sub").mkdir()
+    (vault_dir / "sub" / "link").symlink_to(outside, target_is_directory=True)
+    vault = Vault(vault_dir)
+
+    for action in (
+        lambda: vault.create("sub/link/pwned", "x"),
+        lambda: vault.read("sub/link/pwned"),
+        lambda: vault.update("sub/link/pwned", "x"),
+        lambda: vault.delete("sub/link/pwned"),
+        lambda: vault.move("sub/link/pwned", "moved"),
+    ):
+        with pytest.raises(InvalidNoteId, match="outside the vault"):
+            action()
+    assert list(outside.iterdir()) == []
+
+
+def test_symlinked_note_file_cannot_escape_the_vault(
+    vault_dir: Path, tmp_path: Path
+) -> None:
+    """A note id pointing at a symlinked file would read/write its target."""
+    secret = tmp_path / "secret.md"
+    secret.write_text("not yours", encoding="utf-8")
+    (vault_dir / "linked.md").symlink_to(secret)
+    vault = Vault(vault_dir)
+
+    with pytest.raises(InvalidNoteId, match="outside the vault"):
+        vault.read("linked")
+    with pytest.raises(InvalidNoteId, match="outside the vault"):
+        vault.update("linked", "overwritten")
+    with pytest.raises(InvalidNoteId, match="outside the vault"):
+        vault.delete("linked")
+    assert secret.read_text(encoding="utf-8") == "not yours"
+
+
+def test_symlinked_trash_directory_cannot_escape_the_vault(
+    vault_dir: Path, tmp_path: Path
+) -> None:
+    """Deleting must not move a note outside either — trash lives in .brain."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (vault_dir / ".brain").symlink_to(outside, target_is_directory=True)
+    vault = Vault(vault_dir)
+    vault.root.mkdir(parents=True, exist_ok=True)
+    (vault_dir / "note.md").write_text("x", encoding="utf-8")
+
+    with pytest.raises(InvalidNoteId, match="outside the vault"):
+        vault.delete("note")
+    assert list(outside.iterdir()) == []
+
+
+def test_a_normal_vault_is_unaffected(vault_dir: Path) -> None:
+    """The guard must not get in the way of ordinary use."""
+    vault = Vault(vault_dir)
+    vault.create("projects/homelab", "k3s")
+    assert vault.read("projects/homelab").content == "k3s"
+    vault.delete("projects/homelab")
+    assert vault.restore("projects/homelab").content == "k3s"
+    assert vault.list_notes() == ["projects/homelab"]
 
 
 def test_search_names_case_insensitive(vault_dir: Path) -> None:

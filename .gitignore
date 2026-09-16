@@ -8,3 +8,21 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Vault data (user content, not source)
+/vault/
+
+# SQLite sidecar state inside vaults (audit + capture), WAL sidecars
+*.db
+*.db-wal
+*.db-shm
+
+# Built frontend copied into backend static dir
+/static/
+
+# OS
+.DS_Store
+
+# Brain config (may hold a token) — commit brain.example.yaml instead
+/brain.yaml
+brain.yaml

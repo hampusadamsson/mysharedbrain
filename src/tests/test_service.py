@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mysharedbrain import audit, capture
+from mysharedbrain import capture
 from mysharedbrain.service import Librarian
 from mysharedbrain.vault import NoteExists, NoteNotFound
 
@@ -17,7 +17,7 @@ def test_mutations_are_audited(vault_dir: Path) -> None:
     lib.update_note("a", "2")
     lib.move_note("a", "b")
     lib.delete_note("b")
-    actions = [e.action for e in audit.read_log(vault_dir)]
+    actions = [e.action for e in lib.audit.read_log()]
     assert actions == ["delete", "move", "update", "create"]
     with pytest.raises(NoteNotFound):
         lib.read_note("b")
@@ -29,7 +29,7 @@ def test_ask_returns_hits_when_found(vault_dir: Path) -> None:
     answer = lib.ask("elitedesk")
     assert answer.found is True
     assert "homelab" in answer.note_ids
-    assert capture.list_entries(vault_dir) == []
+    assert lib.capture.list_entries() == []
 
 
 def test_ask_logs_missing_information_when_not_found(vault_dir: Path) -> None:
@@ -37,9 +37,11 @@ def test_ask_logs_missing_information_when_not_found(vault_dir: Path) -> None:
     answer = lib.ask("obscure topic nobody wrote down")
     assert answer.found is False
     assert answer.entry_id
-    pending = capture.list_entries(vault_dir, "pending")
+    pending = lib.capture.list_entries("pending")
     assert len(pending) == 1
-    assert pending[0].kind == "request"
+    assert pending[0].kind == "question"
+    assert pending[0].automated is True
+    assert pending[0].body.startswith("Unanswered question:")
 
 
 def test_ask_rejects_empty_question(vault_dir: Path) -> None:
@@ -56,7 +58,7 @@ def test_process_capture_applies_edit_to_vault(vault_dir: Path) -> None:
     )
     assert reviewed.status == "applied"
     assert lib.read_note("homelab").content == "new ip is 10.0.0.2"
-    assert "capture-applied" in [e.action for e in audit.read_log(vault_dir)]
+    assert "capture-applied" in [e.action for e in lib.audit.read_log()]
 
 
 def test_process_capture_can_create_missing_note(vault_dir: Path) -> None:
@@ -75,7 +77,7 @@ def test_process_capture_approve_endorses_without_vault_change(vault_dir: Path) 
     )
     assert reviewed.status == "approved"
     assert lib.read_note("homelab").content == "old ip"
-    assert "capture-approved" in [e.action for e in audit.read_log(vault_dir)]
+    assert "capture-approved" in [e.action for e in lib.audit.read_log()]
 
 
 def test_process_capture_reject_leaves_vault_alone(vault_dir: Path) -> None:
@@ -100,7 +102,7 @@ def test_ask_dedupes_pending_requests(vault_dir: Path) -> None:
     first = lib.ask("obscure topic nobody wrote down")
     second = lib.ask("obscure topic nobody wrote down")
     assert first.entry_id == second.entry_id
-    assert len(capture.list_entries(vault_dir, "pending")) == 1
+    assert len(lib.capture.list_entries("pending")) == 1
 
 
 def test_process_capture_applied_requires_content(vault_dir: Path) -> None:
@@ -108,7 +110,7 @@ def test_process_capture_applied_requires_content(vault_dir: Path) -> None:
     entry = lib.give_feedback("edit", "fix it", note_id="homelab")
     with pytest.raises(ValueError, match="requires content"):
         lib.process_capture(entry.id, "applied", "curator")
-    assert capture.list_entries(vault_dir, "pending")[0].id == entry.id
+    assert lib.capture.list_entries("pending")[0].id == entry.id
 
 
 def test_delete_trashes_and_restores(vault_dir: Path) -> None:
@@ -147,7 +149,7 @@ def test_append_patch_frontmatter_audited(vault_dir: Path) -> None:
     lib.append_note("doc", "more")
     lib.patch_note("doc", "A", "new")
     lib.set_frontmatter("doc", {"tags": ["x"]})
-    actions = [e.action for e in audit.read_log(vault_dir)]
+    actions = [e.action for e in lib.audit.read_log()]
     assert actions == ["frontmatter", "patch", "append", "create"]
     assert lib.get_tags("doc") == ["x"]
 
@@ -158,6 +160,71 @@ def test_read_notes_batch_and_recent_changes(vault_dir: Path) -> None:
     batch = lib.read_notes(["a", "missing"])
     assert [n.id for n in batch["notes"]] == ["a"]
     assert batch["missing"] == ["missing"]
-    assert lib.recent_changes(1)[0].action == "create"
+    # missing ids are not interactions, so they leave no trace
+    assert [e.action for e in lib.recent_changes(2)] == ["read", "create"]
+    assert lib.recent_changes(1, kind="read")[0].note_id == "a"
     assert lib.list_directory("") == {"folders": [], "notes": ["a"]}
     assert lib.search_tags("x") == []
+
+
+def test_reading_a_note_is_logged_against_the_file(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir, actor="curator")
+    lib.create_note("projects/homelab", "k3s")
+    lib.read_note("projects/homelab")
+    entries = lib.file_history("projects/homelab")
+    assert [(e.action, e.kind, e.actor, e.note_id) for e in entries] == [
+        ("read", "read", "curator", "projects/homelab"),
+        ("create", "write", "curator", "projects/homelab"),
+    ]
+
+
+def test_file_history_ignores_other_notes(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("a", "1")
+    lib.create_note("b", "2")
+    assert [e.note_id for e in lib.file_history("a")] == ["a"]
+    assert lib.file_history("never-touched") == []
+
+
+def test_move_is_logged_on_the_old_path_with_the_destination(
+    vault_dir: Path,
+) -> None:
+    """A moved file's log must still show where it went."""
+    lib = Librarian(vault_dir)
+    lib.create_note("projects/homelab", "k3s")
+    lib.move_note("projects/homelab", "infra/homelab")
+    moves = lib.file_history("projects/homelab", kind="move")
+    assert [(e.action, e.note_id, e.detail) for e in moves] == [
+        ("move", "projects/homelab", "to infra/homelab")
+    ]
+
+
+def test_search_logs_a_find_per_matching_file(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("homelab", "k3s runs on elitedesk")
+    lib.search("elitedesk")
+    finds = lib.file_history("homelab", kind="find")
+    assert len(finds) == 1
+    assert finds[0].detail == "query:elitedesk"
+
+
+def test_untracked_search_leaves_no_trace(vault_dir: Path) -> None:
+    """Type-ahead searches must not turn the log into a keystroke record."""
+    lib = Librarian(vault_dir)
+    lib.create_note("homelab", "k3s runs on elitedesk")
+    lib.search("elitedesk", track=False)
+    assert lib.file_history("homelab", kind="find") == []
+
+
+def test_file_stats_count_kinds(vault_dir: Path) -> None:
+    lib = Librarian(vault_dir)
+    lib.create_note("a", "1")
+    lib.read_note("a")
+    lib.read_note("a")
+    lib.update_note("a", "2")
+    stats = lib.file_stats("a")
+    assert stats.note_id == "a"
+    assert stats.total == 4
+    assert stats.counts == {"read": 2, "write": 2}
+    assert stats.first_seen and stats.last_seen
+    assert stats.first_seen <= stats.last_seen

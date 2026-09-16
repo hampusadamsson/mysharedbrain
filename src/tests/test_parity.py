@@ -6,6 +6,9 @@ Resources/prompts (MCP-native) and health/SPA/docs (HTTP-only) are out of scope.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+from typing import Any
+
 from fastmcp import Client
 
 from mysharedbrain.app import create_app
@@ -30,18 +33,41 @@ TOOL_ROUTES: dict[str, set[tuple[str, str]]] = {
     "get_frontmatter": {("GET", ID + "/meta")},
     "set_frontmatter": {("PUT", ID + "/meta")},
     "get_backlinks": {("GET", ID + "/backlinks")},
+    "note_history": {("GET", ID + "/history")},
     "get_outgoing": {("GET", ID + "/outgoing")},
     "recent_changes": {("GET", "/api/audit")},
     "list_capture": {("GET", "/api/capture")},
     "give_feedback": {("POST", "/api/feedback")},
     "review_capture": {("POST", "/api/capture/{entry_id}/review")},
+    "set_capture_status": {("PUT", "/api/capture/{entry_id}/status")},
     "ask_question": {("POST", "/api/request")},
+    "get_settings": {("GET", "/api/settings")},
+    "update_settings": {("PUT", "/api/settings")},
+    "run_job": {("POST", "/api/settings/jobs/{job_id}/run")},
+    "test_mcp_server": {("POST", "/api/settings/mcp/test")},
+    "test_model": {("POST", "/api/settings/model/test")},
+    "list_model_providers": {("GET", "/api/settings/providers")},
+    "list_job_runs": {("GET", "/api/settings/jobs/{job_id}/runs")},
 }
+
+
+def _iter_routes(routes: Iterable[Any]) -> Iterator[Any]:
+    """Yield leaf routes, expanding ``include_router`` wrappers.
+
+    FastAPI >=0.140 keeps included routers lazy as ``_IncludedRouter``
+    placeholders, so the leaf routes are reached via ``original_router``.
+    """
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            yield from _iter_routes(original.routes)
+        else:
+            yield route
 
 
 def api_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
-    for route in create_app().routes:
+    for route in _iter_routes(create_app().routes):
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", "")
         if methods and path.startswith("/api"):

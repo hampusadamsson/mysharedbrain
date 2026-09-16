@@ -10,7 +10,8 @@ export const space = $state<SpaceState>({ pending: 0, notes: [] });
 
 export async function refreshPending() {
 	try {
-		space.pending = (await api.listCapture('pending')).entries.length;
+		// Only the count is needed; ask for one row and read the total.
+		space.pending = (await api.listCapture('pending', 1, 0)).total ?? 0;
 	} catch {
 		/* backend unreachable — badge stays stale */
 	}

@@ -8,6 +8,12 @@ import sys
 
 
 def main() -> None:
+    # Before anything else: without this the scheduler's INFO lines have no
+    # handler and are silently dropped.
+    from mysharedbrain.logging_setup import configure_logging
+
+    configure_logging()
+
     if "--mcp" in sys.argv[1:]:
         from mysharedbrain.mcp import mcp
 

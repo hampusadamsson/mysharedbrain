@@ -3,6 +3,11 @@
 Note ids are vault-relative POSIX paths without the ``.md`` suffix, e.g.
 ``"todo"`` or ``"projects/homelab"``. Flat or nested — both are just paths.
 Dot-directories (``.brain/``) hold internal state and are never notes.
+
+Every id is validated twice: as a path (no ``..``, no absolute, no hidden
+segments) *and* by resolving it, so a symlink inside the vault cannot be used to
+read or write outside it. The agent chooses its own note ids, so the vault is the
+only thing it can reach — enforced, not assumed.
 """
 
 from __future__ import annotations
@@ -102,7 +107,26 @@ class Vault:
 
     def _path(self, note_id: str) -> Path:
         rel = _validate(note_id)
-        return self.root / (rel + NOTE_SUFFIX)
+        return self._contained(self.root / (rel + NOTE_SUFFIX))
+
+    def _trash_path(self, note_id: str) -> Path:
+        rel = _validate(note_id)
+        return self._contained(self.root / TRASH_DIR / (rel + NOTE_SUFFIX))
+
+    def _contained(self, path: Path) -> Path:
+        """Reject a path that resolves outside the vault.
+
+        ``_validate`` rejects ``..``, absolute and hidden segments, but it cannot
+        see a symlink: ``sub/link -> /tmp`` made ``sub/link/note`` write *outside*
+        the vault, and ``list_notes`` never showed it, so the note was real on
+        disk yet invisible in the brain. The agent picks its own note ids, so
+        "only act on the vault" has to be enforced here, not assumed.
+        """
+        target = path.resolve()
+        root = self.root.resolve()
+        if target != root and not target.is_relative_to(root):
+            raise InvalidNoteId(f"{path.name!r} resolves outside the vault: {target}")
+        return path
 
     def create(self, note_id: str, content: str) -> Note:
         path = self._path(note_id)
@@ -133,14 +157,14 @@ class Vault:
         path = self._path(note_id)
         if not path.is_file():
             raise NoteNotFound(f"note not found: {note_id!r}")
-        target = self.root / TRASH_DIR / (_validate(note_id) + NOTE_SUFFIX)
+        target = self._trash_path(note_id)
         target.parent.mkdir(parents=True, exist_ok=True)
         path.rename(target)
         self._prune_empty_parents(path.parent)
 
     def restore(self, note_id: str) -> Note:
         """Move a trashed note back into the vault."""
-        target = self.root / TRASH_DIR / (_validate(note_id) + NOTE_SUFFIX)
+        target = self._trash_path(note_id)
         if not target.is_file():
             raise NoteNotFound(f"no trashed note: {note_id!r}")
         dst = self._path(note_id)

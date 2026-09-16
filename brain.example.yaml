@@ -1,0 +1,90 @@
+# MySharedBrain config — copy to `brain.yaml` (git-ignored) or mount as a
+# configmap at $BRAIN_CONFIG. Every value here can be overridden by an
+# environment variable using the BRAIN__ prefix and __ nesting, e.g.
+#
+#   BRAIN__AGENT__MODEL=openai:gpt-4o
+#   BRAIN__AGENT__API_KEY=sk-…        # injected from a secret, never committed
+#
+# The settings page in the UI edits this same file. The schedule below is the
+# shipped default: three disabled examples, so nothing runs on its own until you
+# turn it on deliberately.
+
+agent:
+  # Pydantic-AI model string; the provider must be installed.
+  model: openai:gpt-4o-mini
+  # Any provider, any endpoint. Leave `provider` empty for the default endpoint
+  # implied by the model string. Examples of when you would fill it in:
+  #
+  #   openai-compatible self-hosted (Ollama, vLLM, LM Studio, LiteLLM):
+  #   provider: { name: ollama, base_url: http://localhost:11434/v1 }
+  #   model: llama3.1
+  #
+  #   a gateway that needs its own argument names:
+  #   provider:
+  #     name: litellm
+  #     base_url: https://proxy.internal/v1
+  #     options: { custom_llm_provider: openai }
+  #
+  #   Azure OpenAI, which wants the endpoint and an api version:
+  #   provider:
+  #     name: azure
+  #     base_url: https://<resource>.openai.azure.com
+  #     api_version: "2024-10-21"
+  #
+  # The settings page lists the providers this install can actually import.
+  provider: {}
+  # Prefer the env var: leave api_key out and let a secret fill it.
+  api_key_env: OPENAI_API_KEY
+  # General vault instructions, as a markdown note the librarian may rewrite.
+  instructions_file: librarian.md
+  instructions: ""
+  max_steps: 20
+  # Careful, repeatable edits rather than creative writing. Set null to defer to
+  # the provider's default.
+  temperature: 0.2
+
+scheduler:
+  # OFF by default: the jobs below are disabled too, so the librarian never acts
+  # on the vault unprompted. Turn this on (and enable a job) when you are ready.
+  enabled: false
+  tick_seconds: 30
+  # Never-run jobs fire immediately on boot instead of after one interval.
+  run_on_start: false
+
+# Built-in tools (vault notes + capture queue only). Absent name = enabled.
+tools:
+  delete_note:
+    enabled: false
+
+# Remote MCP servers add tools to every job that allows them. Remote only:
+# a local (stdio) server would be shell access, and the librarian has none.
+mcp_servers:
+  - name: example-http
+    transport: http
+    url: https://mcp.example.com/mcp
+    enabled: false
+
+# Scheduled librarian runs. Exactly one of `every` (30m/4h/2d) or `cron` per job.
+# All disabled: these are the shapes worth having, not a schedule you agreed to.
+jobs:
+  - id: capture-triage
+    name: Capture triage
+    enabled: false
+    every: 4h
+    instructions: |
+      Look at the pending capture queue. Group requests into actionable items,
+      apply the ones the vault instructions allow, and review every entry —
+      applied, approved or rejected. Never leave a request pending silently.
+
+  - id: vault-sweep
+    name: Vault maintenance sweep
+    enabled: false
+    cron: "0 3 */2 * *"
+    instructions_file: jobs/sweep.md
+    tools: [list_notes, read_note, search_notes, patch_note, move_note]
+
+  - id: source-check
+    name: Source freshness
+    enabled: false
+    every: 6d
+    description: Re-check note sources and queue update requests.

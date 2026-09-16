@@ -4,7 +4,9 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { refreshNotes, refreshPending } from '$lib/stores/space.svelte';
+	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 
 	let { children } = $props();
 	let drawer = $state(false);
@@ -13,8 +15,13 @@
 		refreshNotes();
 		refreshPending();
 	});
+
+	afterNavigate(() => {
+		drawer = false;
+	});
 </script>
 
+<ModeWatcher defaultMode="system" />
 <TopBar onmenu={() => (drawer = !drawer)} />
 
 <div class="flex min-h-[calc(100vh-3.5rem)]">
@@ -26,7 +33,7 @@
 		></button>
 	{/if}
 	<aside
-		class="fixed top-14 bottom-0 left-0 z-50 flex w-[min(300px,85vw)] flex-col border-r bg-muted/40 transition-transform md:static md:z-auto md:w-70 md:translate-x-0 {drawer
+		class="fixed top-14 bottom-0 left-0 z-50 flex w-[min(300px,85vw)] flex-col border-r bg-background transition-transform md:static md:z-auto md:w-70 md:translate-x-0 md:bg-muted/40 {drawer
 			? 'translate-x-0 shadow-xl'
 			: '-translate-x-full'}"
 	>

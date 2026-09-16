@@ -26,7 +26,12 @@ describe('api client', () => {
 
 		fetchMock.mockResolvedValueOnce(jsonResponse({ names: [], content: [] }));
 		await api.search('q', 5, 2);
-		expect(fetchMock.mock.calls[1][0]).toBe('/api/search?q=q&limit=5&offset=2');
+		expect(fetchMock.mock.calls[1][0]).toBe('/api/search?q=q&limit=5&offset=2&track=true');
+
+		// type-ahead must not write 'find' entries into the log
+		fetchMock.mockResolvedValueOnce(jsonResponse({ names: [], content: [] }));
+		await api.search('q', 5, 2, false);
+		expect(fetchMock.mock.calls[2][0]).toBe('/api/search?q=q&limit=5&offset=2&track=false');
 	});
 
 	it('encodes note ids in paths', async () => {
@@ -51,5 +56,35 @@ describe('api client', () => {
 			json: async () => null
 		} as Response);
 		await expect(api.deleteNote('x')).resolves.toBeNull();
+	});
+
+	it('sends pagination params for capture and audit', async () => {
+		const fetchMock = vi.mocked(fetch);
+		fetchMock.mockResolvedValueOnce(jsonResponse({ entries: [], total: 0 }));
+		await api.listCapture('pending', 20, 40);
+		expect(fetchMock.mock.calls[0][0]).toBe('/api/capture?limit=20&offset=40&status=pending');
+
+		fetchMock.mockResolvedValueOnce(jsonResponse({ entries: [], total: 0 }));
+		await api.listCapture(undefined, 20, 0);
+		expect(fetchMock.mock.calls[1][0]).toBe('/api/capture?limit=20&offset=0');
+
+		fetchMock.mockResolvedValueOnce(jsonResponse({ entries: [], total: 0 }));
+		await api.audit(25, 50);
+		expect(fetchMock.mock.calls[2][0]).toBe('/api/audit?limit=25&offset=50');
+	});
+
+	it('hits the settings endpoints', async () => {
+		const fetchMock = vi.mocked(fetch);
+		fetchMock.mockResolvedValueOnce(jsonResponse({ config: {} }));
+		await api.getSettings();
+		expect(fetchMock.mock.calls[0][0]).toBe('/api/settings');
+
+		fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1, status: 'ok' }));
+		await api.runJob('sweep all');
+		expect(fetchMock.mock.calls[1][0]).toBe('/api/settings/jobs/sweep%20all/run');
+
+		fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }));
+		await api.jobRuns('sweep', 5);
+		expect(fetchMock.mock.calls[2][0]).toBe('/api/settings/jobs/sweep/runs?limit=5');
 	});
 });

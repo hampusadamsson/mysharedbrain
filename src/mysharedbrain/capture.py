@@ -1,25 +1,58 @@
-"""Capture queue: the feedback inbox.
+"""Capture queue: the feedback inbox, sqlite-backed.
 
-Corrections, missing-information notes and requests land here as ``pending``
-entries. The librarian reviews each one (double-check) — ``applied`` (vault
-updated), ``approved`` (endorsed, no vault change needed) or ``rejected`` —
-never silently dropped.
+Corrections, missing-information notes, requests and open questions land here as
+``pending`` entries. The librarian reviews each one (double-check) — ``applied``
+(vault updated), ``approved`` (endorsed, no vault change needed) or ``rejected``
+— never silently dropped. Review is a guarded ``UPDATE``, so an entry can never
+be reviewed twice.
+
+Entries the system files on its own (an unanswered question the librarian could
+not resolve) are marked ``automated``, so a reviewer can tell machine-filed work
+from a person's.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
-CAPTURE_FILE = Path(".brain/capture.jsonl")
+from mysharedbrain.db import Database
 
-Kind = Literal["edit", "missing", "request"]
+Kind = Literal["edit", "missing", "request", "question"]
 Status = Literal["pending", "applied", "approved", "rejected"]
 Verdict = Literal["applied", "approved", "rejected"]
+
+#: Valid kinds, in the order the UI offers them.
+KINDS: tuple[str, ...] = ("edit", "missing", "request", "question")
+
+#: Valid statuses. Presentation order is the UI's business — capture orders them
+#: pending → approved → applied → rejected.
+STATUSES: tuple[str, ...] = ("pending", "approved", "applied", "rejected")
+
+
+def check_kind(value: str) -> Kind:
+    """Validate a kind string and narrow it to the ``Kind`` literal.
+
+    Lets HTTP/MCP adapters accept a plain ``str`` and hand the service a typed
+    value without a cast at every call site.
+    """
+    if value not in KINDS:
+        raise ValueError(f"unknown feedback kind: {value!r}")
+    return cast("Kind", value)
+
+
+def check_status(value: str) -> Status:
+    """Validate a status string and narrow it to the ``Status`` literal."""
+    if value not in STATUSES:
+        raise ValueError(f"unknown status: {value!r}")
+    return cast("Status", value)
+
+
+_COLUMNS = "id, ts, kind, body, note_id, status, reviewer, review_note, automated"
 
 
 @dataclass
@@ -32,66 +65,14 @@ class FeedbackEntry:
     status: str
     reviewer: str = ""
     review_note: str = ""
+    automated: bool = False
 
 
-def _capture_path(root: Path) -> Path:
-    path = root / CAPTURE_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _read_all(root: Path) -> list[FeedbackEntry]:
-    """Fold the append-only log: entry lines are bases, ``_review`` lines
-    override. Concurrent writers only ever append, never rewrite."""
-    path = root / CAPTURE_FILE
-    if not path.is_file():
-        return []
-    bases: dict[str, FeedbackEntry] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        data = json.loads(line)
-        if data.pop("_review", False):
-            base = bases.get(data.get("id", ""))
-            if base is None:
-                continue
-            base.status = data.get("status", base.status)
-            base.reviewer = data.get("reviewer", "")
-            base.review_note = data.get("review_note", "")
-        elif data.get("id") not in bases:
-            bases[data["id"]] = FeedbackEntry(**data)
-    return list(bases.values())
-
-
-def _append_line(root: Path, record: dict[str, object]) -> None:
-    with _capture_path(root).open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record) + "\n")
-
-
-def submit(root: Path, *, kind: Kind, body: str, note_id: str = "") -> FeedbackEntry:
-    """Queue a new feedback entry as ``pending``."""
-    if not body.strip():
-        raise ValueError("feedback body must not be empty")
-    if kind not in ("edit", "missing", "request"):
-        raise ValueError(f"unknown feedback kind: {kind!r}")
-    entry = FeedbackEntry(
-        id=uuid.uuid4().hex[:12],
-        ts=datetime.now(UTC).isoformat(),
-        kind=kind,
-        body=body.strip(),
-        note_id=note_id.strip(),
-        status="pending",
-    )
-    _append_line(root, asdict(entry))
-    return entry
-
-
-def list_entries(root: Path, status: Status | None = None) -> list[FeedbackEntry]:
-    """Oldest-first. Filter by status when given."""
-    entries = _read_all(root)
-    if status is not None:
-        entries = [e for e in entries if e.status == status]
-    return entries
+def _entry(row: Mapping[str, object]) -> FeedbackEntry:
+    """Row → entry, coercing the stored 0/1 flag back to a real bool."""
+    data = dict(row)
+    data["automated"] = bool(data.get("automated", 0))
+    return FeedbackEntry(**data)  # type: ignore[arg-type]
 
 
 class EntryNotFound(Exception):
@@ -99,32 +80,143 @@ class EntryNotFound(Exception):
 
 
 class EntryAlreadyReviewed(Exception):
-    """The entry was already applied or rejected."""
+    """The entry was already applied, approved or rejected."""
 
 
-def review(
-    root: Path, entry_id: str, verdict: Verdict, reviewer: str, review_note: str = ""
-) -> FeedbackEntry:
-    """Mark a pending entry as applied/approved/rejected. The vault change
-    itself (applied only) is performed by the caller (librarian)."""
-    if verdict not in ("applied", "approved", "rejected"):
-        raise ValueError(f"unknown verdict: {verdict!r}")
-    entry = next((e for e in _read_all(root) if e.id == entry_id), None)
-    if entry is None:
-        raise EntryNotFound(f"capture entry not found: {entry_id!r}")
-    if entry.status != "pending":
-        raise EntryAlreadyReviewed(f"entry {entry_id!r} is already {entry.status}")
-    _append_line(
-        root,
-        {
-            "_review": True,
-            "id": entry_id,
-            "status": verdict,
-            "reviewer": reviewer,
-            "review_note": review_note,
-        },
-    )
-    entry.status = verdict
-    entry.reviewer = reviewer
-    entry.review_note = review_note
-    return entry
+class CaptureQueue:
+    """Feedback inbox for one vault."""
+
+    def __init__(self, root: Path) -> None:
+        self.db = Database(root)
+
+    def submit(
+        self, *, kind: Kind, body: str, note_id: str = "", automated: bool = False
+    ) -> FeedbackEntry:
+        """Queue a new feedback entry as ``pending``.
+
+        ``automated`` marks an entry the system filed on its own (an unanswered
+        question) rather than a person.
+        """
+        if not body.strip():
+            raise ValueError("feedback body must not be empty")
+        if kind not in KINDS:
+            raise ValueError(f"unknown feedback kind: {kind!r}")
+        entry = FeedbackEntry(
+            id=uuid.uuid4().hex[:12],
+            ts=datetime.now(UTC).isoformat(),
+            kind=kind,
+            body=body.strip(),
+            note_id=note_id.strip(),
+            status="pending",
+            automated=automated,
+        )
+        with self.db.transaction() as conn:
+            conn.execute(
+                f"INSERT INTO capture_entries ({_COLUMNS})"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry.id,
+                    entry.ts,
+                    entry.kind,
+                    entry.body,
+                    entry.note_id,
+                    entry.status,
+                    entry.reviewer,
+                    entry.review_note,
+                    int(entry.automated),
+                ),
+            )
+        return entry
+
+    def get(self, entry_id: str) -> FeedbackEntry | None:
+        """One entry by id, or ``None``."""
+        with self.db.connection() as conn:
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM capture_entries WHERE id = ?", (entry_id,)
+            ).fetchone()
+        return _entry(row) if row is not None else None
+
+    def list_entries(
+        self, status: Status | None = None, limit: int | None = None, offset: int = 0
+    ) -> list[FeedbackEntry]:
+        """Oldest-first. Filter by status, page with limit/offset when given."""
+        sql = f"SELECT {_COLUMNS} FROM capture_entries"
+        params: list[object] = []
+        if status is not None:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY seq"
+        if limit is not None or offset:
+            # SQLite needs a LIMIT before OFFSET; -1 means "no limit".
+            sql += " LIMIT ? OFFSET ?"
+            params.extend((limit if limit is not None else -1, offset))
+        with self.db.connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_entry(row) for row in rows]
+
+    def count(self, status: Status | None = None) -> int:
+        """How many entries exist, so the UI can paginate honestly."""
+        sql = "SELECT COUNT(*) AS n FROM capture_entries"
+        params: tuple[object, ...] = ()
+        if status is not None:
+            sql += " WHERE status = ?"
+            params = (status,)
+        with self.db.connection() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return int(row["n"])
+
+    def restate(
+        self, entry_id: str, status: Status, reviewer: str, review_note: str = ""
+    ) -> FeedbackEntry:
+        """Set an entry's state outright, whatever it was before.
+
+        Unlike :meth:`review` this is an administrative override — it allows any
+        transition (including back to ``pending``, or re-reviewing a resolved
+        entry). The caller audits it, so an override is never anonymous.
+        """
+        if status not in STATUSES:
+            raise ValueError(f"unknown status: {status!r}")
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT status FROM capture_entries WHERE id = ?", (entry_id,)
+            ).fetchone()
+            if row is None:
+                raise EntryNotFound(f"capture entry not found: {entry_id!r}")
+            conn.execute(
+                "UPDATE capture_entries SET status = ?, reviewer = ?, review_note = ?"
+                " WHERE id = ?",
+                (status, reviewer, review_note, entry_id),
+            )
+        entry = self.get(entry_id)
+        assert entry is not None  # just wrote it
+        return entry
+
+    def review(
+        self, entry_id: str, verdict: Verdict, reviewer: str, review_note: str = ""
+    ) -> FeedbackEntry:
+        """Mark a pending entry as applied/approved/rejected.
+
+        The vault change itself (applied only) is performed by the caller
+        (librarian). The status check and the write share one transaction, so
+        two reviewers racing on the same entry can never both win.
+        """
+        if verdict not in ("applied", "approved", "rejected"):
+            raise ValueError(f"unknown verdict: {verdict!r}")
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT status FROM capture_entries WHERE id = ?", (entry_id,)
+            ).fetchone()
+            if row is None:
+                raise EntryNotFound(f"capture entry not found: {entry_id!r}")
+            if row["status"] != "pending":
+                raise EntryAlreadyReviewed(
+                    f"entry {entry_id!r} is already {row['status']}"
+                )
+            conn.execute(
+                "UPDATE capture_entries SET status = ?, reviewer = ?, review_note = ?"
+                " WHERE id = ?",
+                (verdict, reviewer, review_note, entry_id),
+            )
+        entry = self.get(entry_id)
+        assert entry is not None  # just wrote it
+        return entry
