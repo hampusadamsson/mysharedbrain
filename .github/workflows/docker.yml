@@ -46,8 +46,7 @@ jobs:
             echo "extra_tag=" >> "$GITHUB_OUTPUT"
           fi
 
-  # One native runner per architecture: the UI build (vite/rolldown) is far too
-  # slow under QEMU emulation. Each job pushes by digest; `merge` combines them.
+  # Single-arch amd64 build. Each job pushes by digest; `merge` tags it.
   build:
     needs: prepare
     strategy:
@@ -57,9 +56,6 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest
             arch: amd64
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +106,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Combine the per-arch digests into one multi-arch manifest with tags.
+  # Tag the single-arch digest with tags.
   merge:
     needs: [prepare, build]
     if: github.event_name == 'push'
