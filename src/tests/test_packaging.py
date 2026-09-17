@@ -10,10 +10,12 @@ are configured, so every scheduled/agent job failed with
 
 from __future__ import annotations
 
+import ast
 import tomllib
 from pathlib import Path
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+PACKAGE = Path(__file__).resolve().parents[1] / "mysharedbrain"
 
 #: Import the app performs at runtime -> distribution that must ship in the image.
 RUNTIME_IMPORTS = {
@@ -46,6 +48,26 @@ def test_runtime_dependencies_cover_runtime_imports() -> None:
     runtime = _names(_project()["project"]["dependencies"])  # type: ignore[index]
     missing = {pkg: why for pkg, why in RUNTIME_IMPORTS.items() if pkg not in runtime}
     assert not missing, f"runtime deps missing (image uses --no-dev): {missing}"
+
+
+def test_no_function_level_imports() -> None:
+    """Imports stay at module scope.
+
+    A deferred import hides a missing dependency until the code path runs —
+    exactly how the dev-only ``httpx`` reached production: the API booted fine
+    and only the agent/job path raised ModuleNotFoundError. Eager imports make
+    that a startup failure instead.
+    """
+    offenders: list[str] = []
+    for path in sorted(PACKAGE.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Import | ast.ImportFrom):
+                    offenders.append(f"{path.name}:{sub.lineno}: {ast.unparse(sub)}")
+    assert not offenders, "function-level imports found:\n  " + "\n  ".join(offenders)
 
 
 def test_httpx_is_not_dev_only() -> None:

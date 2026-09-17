@@ -28,7 +28,7 @@ from mysharedbrain.config import (
     load_config,
     parse_config,
 )
-from mysharedbrain.jobs import get_scheduler
+from mysharedbrain.jobs import JobStore, get_scheduler
 from mysharedbrain.service import vault_root
 from mysharedbrain.settings_store import SettingsStore
 from mysharedbrain.tools import TOOLS
@@ -261,7 +261,5 @@ async def run_job(job_id: str) -> JobRunOut:
     summary="Recent runs of a scheduled job",
 )
 def job_runs(job_id: str, limit: int = 20) -> JobRunsOut:
-    from mysharedbrain.jobs import JobStore
-
     runs = JobStore(vault_root()).recent(job_id, limit=limit)
     return JobRunsOut(runs=[JobRunOut(**run.__dict__) for run in runs])

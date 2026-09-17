@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from mysharedbrain import capture
 from mysharedbrain.api_settings import router as settings_router
 from mysharedbrain.audit import KINDS, LogStats
+from mysharedbrain.jobs import get_scheduler
 from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -230,8 +231,6 @@ def _stats_out(stats: LogStats) -> dict[str, object]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Start/stop the job scheduler with the app (no-op when disabled)."""
-    from mysharedbrain.jobs import get_scheduler
-
     scheduler = get_scheduler()
     scheduler.start()
     try:

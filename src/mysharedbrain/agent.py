@@ -18,27 +18,31 @@ import inspect
 import os
 import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from importlib.metadata import version
+from typing import Any
 
+from fastmcp.client import Client
+from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.models import infer_model
+from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.models import Model, infer_model
+from pydantic_ai.providers import infer_provider_class
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
 
 from mysharedbrain.config import BrainConfigDocument, JobSpec, MCPServerConfig
 from mysharedbrain.service import Librarian
 from mysharedbrain.tools import build_tools
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
-    from fastmcp.client import Client
-    from pydantic_ai.mcp import MCPToolset
-    from pydantic_ai.models import Model
-    from pydantic_ai.run import AgentRunResult
+# Imports are deliberately eager: a missing runtime dependency must fail at
+# startup, not midway through a scheduled job (that is how 'httpx is dev-only'
+# shipped and only surfaced as job-run errors in the UI).
 
 
 @dataclass(frozen=True)
@@ -136,20 +140,14 @@ def _is_opencode(name: str) -> bool:
 def _user_agent() -> str:
     """Own user agent: Zen asks clients not to use a generic SDK name."""
     try:
-        from importlib.metadata import version
-
         return f"mysharedbrain/{version('mysharedbrain')}"
     except Exception:
         return "mysharedbrain/0.1.0"
 
 
 def _provider_class(name: str) -> type[Any]:
-    """The provider class pydantic-ai would use (lazily imported by it)."""
-    from pydantic_ai.providers import infer_provider_class
-
+    """The provider class pydantic-ai would use."""
     if _is_opencode(name):
-        from pydantic_ai.providers.openai import OpenAIProvider
-
         return OpenAIProvider
     return infer_provider_class(name)
 
@@ -241,9 +239,6 @@ def _opencode_provider(cfg: BrainConfigDocument) -> tuple[Any, str]:
     ``provider.options.session_id`` pins it when a stable id is wanted.
     Chat completions cover most Go models; that is the inference path used.
     """
-    from openai import AsyncOpenAI
-    from pydantic_ai.providers.openai import OpenAIProvider
-
     wanted = cfg.agent.provider
     if wanted.api_version:
         raise ValueError("provider OpenAIProvider does not accept api_version")
@@ -311,8 +306,6 @@ def mcp_transport(server: MCPServerConfig) -> Any:
     ``insecure`` disables TLS certificate verification (self-signed certs);
     verification stays on unless it is explicitly set.
     """
-    from fastmcp.client.transports import SSETransport, StreamableHttpTransport
-
     headers = server.headers or None
     verify = False if server.insecure else None
     if server.transport == "sse":
@@ -322,8 +315,6 @@ def mcp_transport(server: MCPServerConfig) -> Any:
 
 def mcp_client(server: MCPServerConfig) -> Client[Any]:
     """A ready-to-connect fastmcp client for one server."""
-    from fastmcp.client import Client
-
     return Client(mcp_transport(server), name=server.name or None)
 
 
@@ -509,8 +500,6 @@ def build_mcp_toolsets(
     cfg: BrainConfigDocument, names: list[str] | None = None
 ) -> list[MCPToolset]:
     """Enabled MCP servers as Pydantic-AI toolsets, optionally restricted."""
-    from pydantic_ai.mcp import MCPToolset
-
     return [
         MCPToolset(mcp_client(server), id=server.name)
         for server in cfg.mcp_servers

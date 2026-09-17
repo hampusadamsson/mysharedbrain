@@ -31,7 +31,7 @@ from mysharedbrain.config import (
     parse_duration,
 )
 from mysharedbrain.db import Database
-from mysharedbrain.service import LIBRARIAN_ACTOR, Librarian
+from mysharedbrain.service import LIBRARIAN_ACTOR, Librarian, vault_root
 
 log = logging.getLogger("mysharedbrain.jobs")
 
@@ -342,8 +342,6 @@ def get_scheduler() -> JobScheduler:
     """Process-wide scheduler for the active vault, created on first use."""
     global _scheduler
     if _scheduler is None:
-        from mysharedbrain.service import vault_root
-
         _scheduler = JobScheduler(vault_root())
     return _scheduler
 

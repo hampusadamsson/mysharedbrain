@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
+from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
@@ -30,6 +31,7 @@ from pydantic_settings import (
 )
 
 from mysharedbrain.db import vault_root
+from mysharedbrain.settings_store import SettingsStore
 
 DEFAULT_CONFIG_FILE = Path("brain.yaml")
 MASK = "********"
@@ -301,11 +303,8 @@ class JobSpec(BaseModel):
             )
         if self.every is not None:
             parse_duration(self.every)  # fail fast on typos
-        if self.cron is not None:
-            from croniter import croniter
-
-            if not croniter.is_valid(self.cron):
-                raise ValueError(f"job {self.id!r}: invalid cron {self.cron!r}")
+        if self.cron is not None and not croniter.is_valid(self.cron):
+            raise ValueError(f"job {self.id!r}: invalid cron {self.cron!r}")
         return self
 
 
@@ -449,8 +448,6 @@ class _DatabaseSource(PydanticBaseSettingsSource):
         return None, field_name, False
 
     def __call__(self) -> dict[str, Any]:
-        from mysharedbrain.settings_store import SettingsStore
-
         return SettingsStore(vault_root()).document()
 
 
@@ -511,8 +508,6 @@ def parse_config(data: dict[str, Any]) -> BrainConfigDocument:
 
 def config_source() -> str:
     """Which layer the settings come from: database, file or defaults."""
-    from mysharedbrain.settings_store import SettingsStore
-
     return SettingsStore(vault_root()).source(config_path())
 
 

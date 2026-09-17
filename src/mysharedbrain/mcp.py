@@ -16,6 +16,9 @@ from fastapi import HTTPException
 from fastmcp import FastMCP
 
 from mysharedbrain import api_settings, capture
+from mysharedbrain.agent import check_mcp_server
+from mysharedbrain.audit import KINDS
+from mysharedbrain.config import AgentConfig, MCPServerConfig
 from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -187,8 +190,6 @@ def note_history(
     kind filters to one category: read | find | write | move | delete |
     capture | job | other. Returned with per-kind counts for that file.
     """
-    from mysharedbrain.audit import KINDS
-
     if kind is not None and kind not in KINDS:
         raise ValueError(f"unknown kind: {kind!r}")
     lib = librarian(actor="mcp")
@@ -343,9 +344,7 @@ def list_model_providers() -> dict[str, object]:
     A provider whose SDK is missing is listed as unavailable with the install
     hint. Use the names when configuring provider.name in the settings.
     """
-    from mysharedbrain.api_settings import list_providers
-
-    return list_providers().model_dump()
+    return api_settings.list_providers().model_dump()
 
 
 @mcp.tool
@@ -356,10 +355,7 @@ async def test_model(agent: dict[str, object]) -> dict[str, object]:
     Takes the agent config (model string, token env) and makes one tiny real
     request. Returns ``{ok, detail}`` — ok False carries the error text.
     """
-    from mysharedbrain.api_settings import test_model as check
-    from mysharedbrain.config import AgentConfig
-
-    result = await check(AgentConfig.model_validate(agent))
+    result = await api_settings.test_model(AgentConfig.model_validate(agent))
     return result.model_dump()
 
 
@@ -370,9 +366,6 @@ async def test_mcp_server(server: dict[str, object]) -> dict[str, object]:
 
     Returns ``{ok, detail, tools}`` — ok False carries the error text.
     """
-    from mysharedbrain.agent import check_mcp_server
-    from mysharedbrain.config import MCPServerConfig
-
     return asdict(await check_mcp_server(MCPServerConfig.model_validate(server)))
 
 
