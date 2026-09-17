@@ -16,11 +16,13 @@ from mysharedbrain.agent import (
     build_agent,
     build_model,
     check_model,
+    load_instructions,
     model_string,
     provider_kwargs,
     run_agent,
 )
 from mysharedbrain.config import (
+    AdminConfig,
     AgentConfig,
     BrainConfig,
     BrainConfigDocument,
@@ -61,6 +63,31 @@ def _stub_provider(*params: str) -> type[Any]:
 
 def _cfg(**agent: object) -> BrainConfigDocument:
     return BrainConfigDocument(agent=AgentConfig(**agent))  # type: ignore[arg-type]
+
+
+def test_load_instructions_names_the_admin_section(vault_dir: Path) -> None:
+    """The librarian is told where templates, prompts and the layout live."""
+    text = load_instructions(BrainConfigDocument(), _lib(vault_dir))
+    assert "admin/" in text
+    assert "admin/templates/layout" in text
+    assert "admin/templates/" in text
+    assert "admin/prompts/" in text
+
+
+def test_load_instructions_uses_the_configured_admin_paths(vault_dir: Path) -> None:
+    cfg = BrainConfigDocument(
+        admin=AdminConfig(
+            dir="meta",
+            layout_template="meta/layout",
+            templates={"meeting": "meta/tpl/meeting"},
+            prompts={"triage": "meta/prompts/triage"},
+        )
+    )
+    text = load_instructions(cfg, _lib(vault_dir))
+    assert "meta/" in text
+    assert "meta/layout" in text
+    assert "meeting" in text and "meta/tpl/meeting" in text
+    assert "triage" in text and "meta/prompts/triage" in text
 
 
 def test_provider_kwargs_map_base_url_to_the_provider_parameter() -> None:
@@ -119,6 +146,34 @@ def test_build_model_reaches_the_configured_endpoint() -> None:
     model = build_model(cfg)
     assert model.model_name == "llama3.1"
     assert str(model.provider.base_url).startswith("http://localhost:11434/v1")  # type: ignore[attr-defined]
+
+
+def test_build_model_opencode_defaults_to_zen_endpoint() -> None:
+    """`opencode` is an OpenAI-compatible alias for Zen Go."""
+    cfg = _cfg(
+        model="kimi-k2.7-code",
+        provider=ProviderConfig(name="opencode"),
+        api_key_env="OPENCODE_API_KEY",
+    )
+    model = build_model(cfg)
+    assert str(model.provider.base_url).startswith(  # type: ignore[attr-defined]
+        "https://opencode.ai/zen/go/v1"
+    )
+    headers = model.provider.client._custom_headers  # type: ignore[attr-defined]
+    assert headers.get("x-opencode-session"), "needs stable session header"
+    assert "mysharedbrain" in headers.get("User-Agent", "")
+
+
+def test_build_model_opencode_go_alias_matches() -> None:
+    """Docs use `opencode-go/<model>`; accept it too."""
+    cfg = _cfg(
+        model="kimi-k3",
+        provider=ProviderConfig(name="opencode-go"),
+    )
+    model = build_model(cfg)
+    assert str(model.provider.base_url).startswith(  # type: ignore[attr-defined]
+        "https://opencode.ai/zen/go/v1"
+    )
 
 
 def test_build_model_with_no_provider_block_uses_the_model_string() -> None:

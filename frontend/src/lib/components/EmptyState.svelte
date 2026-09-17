@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '$lib/components/ui/button';
 	import CreateDialog from '$lib/components/CreateDialog.svelte';
 
 	let createOpen = $state(false);
@@ -11,12 +12,7 @@
 		Pages live as markdown files — flat or in folders. Ask the librarian when you can't find
 		something.
 	</p>
-	<button
-		class="mt-6 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-		onclick={() => (createOpen = true)}
-	>
-		Create page
-	</button>
+	<Button class="mt-6" onclick={() => (createOpen = true)}>Create page</Button>
 </div>
 
 <CreateDialog bind:open={createOpen} />

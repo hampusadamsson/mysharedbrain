@@ -128,6 +128,79 @@ class AgentConfig(BaseModel):
     default — useful for providers that reject anything above 1.0."""
 
 
+def _check_note_ref(value: str) -> str:
+    """A vault note id as used by config refs (instructions, templates, …).
+
+    Same safety shape as the vault itself: relative, no ``..``, no hidden
+    segments, no control characters — so a ref can never escape the vault.
+    """
+    text = value.strip().replace("\\", "/")
+    if not text:
+        raise ValueError("note ref must not be empty")
+    if text.startswith("/"):
+        raise ValueError(f"absolute paths are not allowed: {value!r}")
+    parts = text.split("/")
+    if any(p in ("", ".", "..") for p in parts):
+        raise ValueError(f"unsafe path segment in: {value!r}")
+    if any(p.startswith(".") for p in parts):
+        raise ValueError(f"hidden segments are reserved: {value!r}")
+    if any(ord(c) < 32 for c in text):
+        raise ValueError(f"control characters are not allowed: {value!r}")
+    return text
+
+
+def _check_slug(value: str) -> str:
+    slug = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug):
+        raise ValueError(f"invalid name: {value!r} (use a slug like 'meeting')")
+    return slug
+
+
+class AdminConfig(BaseModel):
+    """Vault administration: templates, prompts and the wiki layout.
+
+    All markdown, all in the vault: ``dir`` is the section holding the docs
+    the librarian manages the vault by (``<dir>/templates/`` for page types,
+    ``<dir>/prompts/`` for reusable prompts). ``templates`` maps a page type
+    slug to its template note, ``prompts`` a prompt name to its prompt note.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dir: str = "admin"
+    """Vault section for admin docs (templates, prompts, layout)."""
+
+    layout_template: str = "admin/templates/layout"
+    """Template note for the wiki layout new pages follow (no ``.md`` suffix)."""
+
+    templates: dict[str, str] = Field(default_factory=dict)
+    """Page type slug → template note, e.g. ``{meeting: admin/templates/meeting}``."""
+
+    prompts: dict[str, str] = Field(default_factory=dict)
+    """Prompt name → prompt note, e.g. ``{triage: admin/prompts/triage}``."""
+
+    @field_validator("dir")
+    @classmethod
+    def _check_dir(cls, value: str) -> str:
+        return _check_note_ref(value)
+
+    @field_validator("layout_template")
+    @classmethod
+    def _check_layout(cls, value: str) -> str:
+        return _check_note_ref(value)
+
+    @field_validator("templates", "prompts", mode="before")
+    @classmethod
+    def _check_mappings(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        mapping = cast("dict[object, object]", value)
+        checked: dict[str, str] = {}
+        for raw_key, raw_ref in mapping.items():
+            checked[_check_slug(str(raw_key))] = _check_note_ref(str(raw_ref))
+        return checked
+
+
 class ToolConfig(BaseModel):
     """Per-tool switch. Unknown names are rejected against the registry."""
 
@@ -151,6 +224,13 @@ class MCPServerConfig(BaseModel):
     url: str = ""
     headers: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
+    insecure: bool = False
+    """Skip TLS certificate verification (self-signed certs).
+
+    Off by default: disabling it lets anyone on the network read and modify
+    the traffic, so only enable this for a server you trust on a network you
+    trust. Applies to both transports (``verify=False`` under the hood).
+    """
 
     @model_validator(mode="before")
     @classmethod
@@ -323,6 +403,7 @@ class BrainConfigDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)

@@ -9,7 +9,20 @@ const api = vi.hoisted(() => ({
 	moveNote: vi.fn(),
 	deleteNote: vi.fn(),
 	backlinks: vi.fn(async () => ({ links: [] })),
-	frontmatter: vi.fn(async () => ({}))
+	frontmatter: vi.fn(async () => ({})),
+	noteHistory: vi.fn(async () => ({
+		entries: [],
+		total: 0,
+		limit: 20,
+		offset: 0,
+		stats: {
+			note_id: 'projects/homelab',
+			counts: {},
+			first_seen: new Date().toISOString(),
+			last_seen: new Date().toISOString(),
+			total: 0
+		}
+	}))
 }));
 
 vi.mock('$lib/api/client', async () => {
@@ -175,5 +188,38 @@ describe('NoteView', () => {
 
 		expect(api.deleteNote).toHaveBeenCalledWith(note.id);
 		expect(onchanged).toHaveBeenCalledWith(null);
+	});
+});
+
+describe('page/analytics tabs', () => {
+	it('shows page content by default and keeps the file log behind Analytics', async () => {
+		await setup();
+
+		await expect.element(page.getByRole('tab', { name: 'Page' })).toBeVisible();
+		await expect.element(page.getByRole('tab', { name: 'Analytics' })).toBeVisible();
+		await expect.element(page.getByText('k3s runs on elitedesk')).toBeVisible();
+		expect(page.getByText('FILE LOG').elements()).toHaveLength(0);
+		expect(api.noteHistory).not.toHaveBeenCalled();
+	});
+
+	it('opens the file log on the Analytics tab', async () => {
+		await setup();
+
+		await page.getByRole('tab', { name: 'Analytics' }).click();
+
+		await expect.element(page.getByText('FILE LOG')).toBeVisible();
+		await expect.poll(() => api.noteHistory).toHaveBeenCalledWith(note.id, undefined, 20, 0);
+	});
+
+	it('jumps back to Page when editing starts from Analytics', async () => {
+		await setup();
+
+		await page.getByRole('tab', { name: 'Analytics' }).click();
+		await expect.element(page.getByText('FILE LOG')).toBeVisible();
+
+		await page.getByRole('button', { name: 'Edit' }).click();
+
+		await expect.element(page.getByRole('textbox', { name: 'Page content' })).toBeVisible();
+		expect(page.getByText('FILE LOG').elements()).toHaveLength(0);
 	});
 });

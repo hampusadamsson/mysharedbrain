@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ChevronRight, FileText } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { pageUrl, type TreeNode } from '$lib/notes';
 	import { isOpen, limitFor, showMore, toggle } from '$lib/stores/tree.svelte';
 	import Self from './TreeItem.svelte';
@@ -27,9 +28,11 @@
 					: 'hover:bg-muted'}"
 			>
 				{#if node.children.length > 0}
-					<button
+					<Button
+						variant="ghost"
+						size="icon-xs"
 						aria-label="Toggle {node.name}"
-						class="p-1 text-muted-foreground"
+						class="text-muted-foreground"
 						onclick={() => toggle(node.full)}
 					>
 						<ChevronRight
@@ -37,7 +40,7 @@
 								? 'rotate-90'
 								: ''}"
 						/>
-					</button>
+					</Button>
 				{:else}
 					<span class="w-5.5"></span>
 				{/if}
@@ -60,9 +63,9 @@
 	{/each}
 	{#if hidden > 0}
 		<li class="pl-6">
-			<button class="text-xs text-blue-600 hover:underline" onclick={() => showMore(levelKey)}>
+			<Button variant="link" class="h-auto p-0 text-xs" onclick={() => showMore(levelKey)}>
 				Show more ({hidden} of {nodes.length})
-			</button>
+			</Button>
 		</li>
 	{/if}
 </ul>

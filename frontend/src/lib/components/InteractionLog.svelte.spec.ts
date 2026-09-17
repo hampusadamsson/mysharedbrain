@@ -57,8 +57,9 @@ describe('InteractionLog', () => {
 		await render(InteractionLog, { load: loader() });
 
 		await expect.element(page.getByText('update')).toBeVisible();
-		await expect.element(page.getByRole('listitem').first()).toBeVisible();
-		expect(page.getByRole('listitem').elements()).toHaveLength(2);
+		const items = page.getByRole('list', { name: 'Interactions' }).getByRole('listitem');
+		await expect.element(items.first()).toBeVisible();
+		expect(items.elements()).toHaveLength(2);
 	});
 
 	it('filters by kind and resets to the first page', async () => {

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from mysharedbrain.config import (
     MASK,
+    AdminConfig,
     AgentConfig,
     BrainConfig,
     JobSpec,
@@ -79,6 +80,92 @@ def test_example_jobs_are_fresh_objects(config_file: Path) -> None:
     second = BrainConfig()
     assert len(second.jobs) == 3
     assert second.jobs[0].enabled is False
+
+
+def test_admin_defaults_point_at_the_vault_admin_section(
+    config_file: Path,
+) -> None:
+    """Templates, prompts and the layout live in the vault under `admin/`."""
+    cfg = BrainConfig()
+    assert cfg.admin.dir == "admin"
+    assert cfg.admin.layout_template == "admin/templates/layout"
+    assert cfg.admin.templates == {}
+    assert cfg.admin.prompts == {}
+
+
+def test_admin_dir_rejects_unsafe_paths() -> None:
+    for bad in ("/abs", "../escape", "a/../b", ".hidden/x", "", "   "):
+        with pytest.raises(ValidationError):
+            AdminConfig(dir=bad)
+
+
+def test_admin_note_refs_must_be_safe_notes() -> None:
+    with pytest.raises(ValidationError):
+        AdminConfig(layout_template="/abs")
+    with pytest.raises(ValidationError):
+        AdminConfig(templates={"meeting": "../x"})
+    with pytest.raises(ValidationError):
+        AdminConfig(prompts={"triage": ".hidden/x"})
+
+
+def test_admin_mapping_keys_are_slugs() -> None:
+    with pytest.raises(ValidationError):
+        AdminConfig(templates={"Bad Name!": "admin/templates/x"})
+    with pytest.raises(ValidationError):
+        AdminConfig(prompts={"": "admin/prompts/x"})
+    cfg = AdminConfig(templates={"meeting": "admin/templates/meeting"})
+    assert cfg.templates == {"meeting": "admin/templates/meeting"}
+
+
+def test_example_file_documents_the_admin_defaults(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    example = Path(__file__).resolve().parents[2] / "brain.example.yaml"
+    if not example.is_file():  # pragma: no cover - example lives at repo root
+        pytest.skip("brain.example.yaml not present")
+    monkeypatch.setenv("BRAIN_CONFIG", str(example))
+    assert load_config().admin == BrainConfig().admin
+
+
+def test_yaml_file_loads_admin_and_mcp_insecure(config_file: Path) -> None:
+    """Every newer setting must be YAML-configurable, not UI-only."""
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "admin": {
+                    "dir": "meta",
+                    "layout_template": "meta/layout",
+                    "templates": {"meeting": "meta/tpl/meeting"},
+                    "prompts": {"triage": "meta/prompts/triage"},
+                },
+                "mcp_servers": [
+                    {
+                        "name": "lab",
+                        "transport": "http",
+                        "url": "https://lab/mcp",
+                        "headers": {"Authorization": "Bearer x"},
+                        "insecure": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config()
+    assert cfg.admin.dir == "meta"
+    assert cfg.admin.layout_template == "meta/layout"
+    assert cfg.admin.templates == {"meeting": "meta/tpl/meeting"}
+    assert cfg.admin.prompts == {"triage": "meta/prompts/triage"}
+    (server,) = cfg.mcp_servers
+    assert server.insecure is True
+    assert server.headers == {"Authorization": "Bearer x"}
+
+
+def test_env_overrides_admin_dir(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BRAIN__ADMIN__DIR", "meta")
+    assert load_config().admin.dir == "meta"
 
 
 def test_duration_parsing() -> None:
@@ -209,6 +296,34 @@ def test_mcp_servers_cannot_be_stdio() -> None:
         MCPServerConfig.model_validate(
             {"name": "x", "url": "http://h/mcp", "args": ["--shell"]}
         )
+
+
+def test_mcp_server_verifies_tls_by_default() -> None:
+    from mysharedbrain.config import MCPServerConfig
+
+    assert MCPServerConfig(name="x", url="https://h/mcp").insecure is False
+
+
+def test_insecure_mcp_server_disables_certificate_verification() -> None:
+    """Self-signed certs: `insecure` maps onto the transport's `verify`."""
+    from mysharedbrain.agent import mcp_transport
+    from mysharedbrain.config import MCPServerConfig
+
+    assert mcp_transport(MCPServerConfig(name="a", url="https://h/mcp")).verify is None
+    assert (
+        mcp_transport(
+            MCPServerConfig(name="b", url="https://h/mcp", insecure=True)
+        ).verify
+        is False
+    )
+    assert (
+        mcp_transport(
+            MCPServerConfig(
+                name="c", transport="sse", url="https://h/sse", insecure=True
+            )
+        ).verify
+        is False
+    )
 
 
 def test_only_remote_transports_reach_the_transport_builder() -> None:

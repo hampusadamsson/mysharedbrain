@@ -71,13 +71,15 @@ describe('capture queue', () => {
 
 		await render(Capture);
 
-		const select = page.getByRole('combobox', { name: 'State for edit entry' });
-		await expect.element(select).toHaveValue('rejected');
+		const select = page.getByRole('button', { name: 'State for edit entry' });
+		expect(select.element().textContent ?? '').toContain('Rejected');
+		await select.click();
 		// order matters: approved reads before applied
-		const options = [...select.element().querySelectorAll('option')].map(
-			(o) => (o as HTMLOptionElement).value
-		);
-		expect(options).toEqual(['pending', 'approved', 'applied', 'rejected']);
+		const options = page
+			.getByRole('option')
+			.elements()
+			.map((el) => el.textContent?.trim() ?? '');
+		expect(options).toEqual(['Pending', 'Approved', 'Applied', 'Rejected']);
 		// the quick pending-only buttons are gone once it is resolved
 		expect(page.getByRole('button', { name: 'Approve', exact: true }).elements()).toHaveLength(0);
 	});
@@ -87,10 +89,10 @@ describe('capture queue', () => {
 
 		const STATUS_LABELS = ['Pending', 'Approved', 'Applied', 'Rejected', 'All'];
 		const labels = page
+			.getByRole('group', { name: 'Filter by state' })
 			.getByRole('button')
 			.elements()
-			.map((el) => el.textContent?.trim() ?? '')
-			.filter((text) => STATUS_LABELS.includes(text));
+			.map((el) => el.textContent?.trim() ?? '');
 		expect(labels).toEqual(STATUS_LABELS);
 	});
 
@@ -99,7 +101,8 @@ describe('capture queue', () => {
 		api.setCaptureStatus.mockResolvedValue({ id: 'e1', status: 'pending' });
 
 		await render(Capture);
-		await page.getByRole('combobox', { name: 'State for edit entry' }).selectOptions('pending');
+		await page.getByRole('button', { name: 'State for edit entry' }).click();
+		await page.getByRole('option', { name: 'Pending' }).click();
 
 		await expect.poll(() => api.setCaptureStatus).toHaveBeenCalledWith('e1', 'pending');
 		await expect.poll(() => api.listCapture).toHaveBeenCalledTimes(2);
@@ -110,7 +113,8 @@ describe('capture queue', () => {
 		api.setCaptureStatus.mockRejectedValue(new Error('entry not found'));
 
 		await render(Capture);
-		await page.getByRole('combobox', { name: 'State for edit entry' }).selectOptions('rejected');
+		await page.getByRole('button', { name: 'State for edit entry' }).click();
+		await page.getByRole('option', { name: 'Rejected' }).click();
 
 		await expect.poll(() => api.listCapture).toHaveBeenCalledTimes(2);
 	});

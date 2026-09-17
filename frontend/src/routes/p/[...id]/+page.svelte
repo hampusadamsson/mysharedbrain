@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ApiError, api, type Note } from '$lib/api/client';
+	import { Button } from '$lib/components/ui/button';
 	import NoteView from '$lib/components/NoteView.svelte';
 	import { refreshNotes } from '$lib/stores/space.svelte';
 	import { onMount } from 'svelte';
@@ -104,24 +105,9 @@
 		No page or folder at <code class="rounded bg-muted px-1.5 py-0.5">{id}</code>. Ask the librarian
 		and the miss is queued for retrieval.
 	</p>
-	<div class="mt-4 flex gap-2">
-		<a
-			href="/ask"
-			class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-		>
-			Ask the librarian
-		</a>
-		<a
-			href={`/search?q=${encodeURIComponent(id)}`}
-			class="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted"
-		>
-			Search
-		</a>
-		<button
-			class="rounded-md border px-4 py-2 text-sm font-semibold hover:bg-muted"
-			onclick={restore}
-		>
-			Restore from trash
-		</button>
+	<div class="mt-4 flex flex-wrap gap-2">
+		<Button href="/ask">Ask the librarian</Button>
+		<Button variant="outline" href={`/search?q=${encodeURIComponent(id)}`}>Search</Button>
+		<Button variant="outline" onclick={restore}>Restore from trash</Button>
 	</div>
 {/if}

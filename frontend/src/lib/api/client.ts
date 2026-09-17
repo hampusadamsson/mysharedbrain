@@ -153,6 +153,7 @@ export interface MCPServerConfig {
 	url: string;
 	headers: Record<string, string>;
 	enabled: boolean;
+	insecure: boolean;
 }
 
 export interface JobSpec {
@@ -169,8 +170,17 @@ export interface JobSpec {
 	max_steps: number | null;
 }
 
+/** Vault administration: templates, prompts and the wiki layout (all markdown). */
+export interface AdminConfig {
+	dir: string;
+	layout_template: string;
+	templates: Record<string, string>;
+	prompts: Record<string, string>;
+}
+
 export interface BrainConfigDoc {
 	agent: AgentConfig;
+	admin: AdminConfig;
 	scheduler: SchedulerConfig;
 	tools: Record<string, { enabled: boolean }>;
 	mcp_servers: MCPServerConfig[];

@@ -144,6 +144,35 @@ def test_tool_toggle_round_trip(vault_dir: Path, config_file: Path) -> None:
     assert tools["read_note"] is True
 
 
+def test_put_settings_round_trips_the_admin_section(
+    vault_dir: Path, config_file: Path
+) -> None:
+    c = client()
+    assert c.get(CONFIG_PATH).json()["config"]["admin"]["dir"] == "admin"
+    config = c.get(CONFIG_PATH).json()["config"]
+    config["admin"] = {
+        "dir": "meta",
+        "layout_template": "meta/layout",
+        "templates": {"meeting": "meta/tpl/meeting"},
+        "prompts": {"triage": "meta/prompts/triage"},
+    }
+    saved = c.put(CONFIG_PATH, json={"config": config}).json()
+    assert saved["config"]["admin"]["dir"] == "meta"
+    assert saved["config"]["admin"]["templates"] == {"meeting": "meta/tpl/meeting"}
+
+
+def test_put_settings_round_trips_mcp_insecure_flag(
+    vault_dir: Path, config_file: Path
+) -> None:
+    c = client()
+    config = c.get(CONFIG_PATH).json()["config"]
+    config["mcp_servers"] = [
+        {"name": "lab", "transport": "http", "url": "https://lab/mcp", "insecure": True}
+    ]
+    saved = c.put(CONFIG_PATH, json={"config": config}).json()
+    assert saved["config"]["mcp_servers"][0]["insecure"] is True
+
+
 def test_put_settings_rejects_unknown_tool(vault_dir: Path, config_file: Path) -> None:
     res = client().put(
         CONFIG_PATH, json={"config": {"tools": {"nuke": {"enabled": True}}}}

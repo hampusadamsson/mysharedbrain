@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { timeAgo } from '$lib/notes';
@@ -128,7 +129,7 @@
 
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 	<h1 class="text-2xl font-semibold tracking-tight">Capture queue</h1>
-	<div class="flex flex-wrap gap-1">
+	<div role="group" aria-label="Filter by state" class="flex flex-wrap gap-1">
 		{#each FILTERS as option (option.value)}
 			<Button
 				size="sm"
@@ -170,17 +171,24 @@
 				</p>
 				<div class="mt-3 flex flex-wrap items-center gap-2">
 					<label class="text-xs text-muted-foreground" for="status-{entry.id}">State</label>
-					<select
-						id="status-{entry.id}"
-						aria-label="State for {entry.kind} entry"
-						class="h-8 rounded-md border bg-transparent px-2 text-xs"
+					<Select.Root
+						type="single"
 						value={entry.status}
-						onchange={(e) => setStatus(entry, e.currentTarget.value as FeedbackStatus)}
+						onValueChange={(v) => setStatus(entry, v as FeedbackStatus)}
 					>
-						{#each FEEDBACK_STATUSES as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
+						<Select.Trigger
+							id="status-{entry.id}"
+							aria-label="State for {entry.kind} entry"
+							class="h-8 text-xs"
+						>
+							{FEEDBACK_STATUSES.find((o) => o.value === entry.status)?.label ?? entry.status}
+						</Select.Trigger>
+						<Select.Content>
+							{#each FEEDBACK_STATUSES as option (option.value)}
+								<Select.Item value={option.value}>{option.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 					{#if entry.status === 'pending'}
 						<Button size="sm" onclick={() => openApply(entry)}>Apply</Button>
 						<Button size="sm" variant="outline" onclick={review(entry, 'approved')}>Approve</Button>

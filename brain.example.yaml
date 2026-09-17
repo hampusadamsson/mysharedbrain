@@ -31,6 +31,11 @@ agent:
   #     base_url: https://<resource>.openai.azure.com
   #     api_version: "2024-10-21"
   #
+  #   OpenCode Zen Go ($10/mo gateway, https://opencode.ai/zen/go/v1):
+  #   provider: { name: opencode }
+  #   model: kimi-k2.7-code  # or glm-5.2, deepseek-v4-flash, mimo-v2.5, ...
+  #   api_key_env: OPENCODE_API_KEY
+  #
   # The settings page lists the providers this install can actually import.
   provider: {}
   # Prefer the env var: leave api_key out and let a secret fill it.
@@ -42,6 +47,18 @@ agent:
   # Careful, repeatable edits rather than creative writing. Set null to defer to
   # the provider's default.
   temperature: 0.2
+
+# Vault administration: templates, prompts and the wiki layout, all markdown
+# in the vault itself. The librarian manages the vault by these docs.
+admin:
+  # Section holding the admin docs (`<dir>/templates/`, `<dir>/prompts/`).
+  dir: admin
+  # Wiki layout new pages follow (note id, no `.md` suffix).
+  layout_template: admin/templates/layout
+  # Page type slug -> template note, e.g. { meeting: admin/templates/meeting }.
+  templates: {}
+  # Prompt name -> prompt note, e.g. { triage: admin/prompts/triage }.
+  prompts: {}
 
 scheduler:
   # OFF by default: the jobs below are disabled too, so the librarian never acts
@@ -60,9 +77,15 @@ tools:
 # a local (stdio) server would be shell access, and the librarian has none.
 mcp_servers:
   - name: example-http
-    transport: http
+    transport: http # or: sse
     url: https://mcp.example.com/mcp
+    # Extra request headers, e.g. { Authorization: "Bearer …" }.
+    headers: {}
     enabled: false
+    # Skip TLS certificate verification (self-signed certs). Default false.
+    # Only enable for a server you trust on a network you trust: without
+    # verification anyone on the path can read and modify the traffic.
+    insecure: false
 
 # Scheduled librarian runs. Exactly one of `every` (30m/4h/2d) or `cron` per job.
 # All disabled: these are the shapes worth having, not a schedule you agreed to.

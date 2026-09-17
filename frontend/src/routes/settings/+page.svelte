@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
+	import { LAYOUT_DOC, STARTER_DOCS } from '$lib/admin-seed';
 	import type {
 		BrainConfigDoc,
 		CheckResult,
@@ -16,6 +17,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -40,7 +42,7 @@
 	// Model providers the server can reach, and which one is in effect.
 	let providers = $state<ProviderInfo[]>([]);
 
-	const TABS = ['agent', 'jobs', 'tools', 'mcp'] as const;
+	const TABS = ['agent', 'jobs', 'tools', 'mcp', 'templates'] as const;
 	type Tab = (typeof TABS)[number];
 
 	const SOURCES: Record<string, string> = {
@@ -232,6 +234,124 @@
 		if (draft) draft.scheduler.run_on_start = !draft.scheduler.run_on_start;
 	}
 
+	/** Page-type slug → template note rows for the Templates tab. */
+	function templateRows(): [string, string][] {
+		return Object.entries(draft?.admin.templates ?? {});
+	}
+
+	function setTemplate(key: string, value: string, previous?: string) {
+		if (!draft) return;
+		const templates = { ...draft.admin.templates };
+		if (previous !== undefined && previous !== key) delete templates[previous];
+		templates[key] = value;
+		draft.admin.templates = templates;
+	}
+
+	function removeTemplate(key: string) {
+		if (!draft) return;
+		const templates = { ...draft.admin.templates };
+		delete templates[key];
+		draft.admin.templates = templates;
+	}
+
+	function addTemplate() {
+		if (!draft) return;
+		let n = Object.keys(draft.admin.templates).length + 1;
+		while (`type-${n}` in draft.admin.templates) n += 1;
+		setTemplate(`type-${n}`, '');
+	}
+
+	/** Prompt name → prompt note rows for the Templates tab. */
+	function promptRows(): [string, string][] {
+		return Object.entries(draft?.admin.prompts ?? {});
+	}
+
+	function setPrompt(key: string, value: string, previous?: string) {
+		if (!draft) return;
+		const prompts = { ...draft.admin.prompts };
+		if (previous !== undefined && previous !== key) delete prompts[previous];
+		prompts[key] = value;
+		draft.admin.prompts = prompts;
+	}
+
+	function removePrompt(key: string) {
+		if (!draft) return;
+		const prompts = { ...draft.admin.prompts };
+		delete prompts[key];
+		draft.admin.prompts = prompts;
+	}
+
+	function addPrompt() {
+		if (!draft) return;
+		let n = Object.keys(draft.admin.prompts).length + 1;
+		while (`prompt-${n}` in draft.admin.prompts) n += 1;
+		setPrompt(`prompt-${n}`, '');
+	}
+
+	// Notes under the admin dir, for the Templates tab library list.
+	let library = $state<string[]>([]);
+	let libraryLoading = $state(false);
+	let libraryTabSeen = $state(false);
+	let seeding = $state(false);
+
+	$effect(() => {
+		// Lazily, once: the tab mounts with the page, so gate on first open.
+		if (tab === 'templates' && draft && !libraryTabSeen) {
+			libraryTabSeen = true;
+			void loadLibrary();
+		}
+	});
+
+	async function loadLibrary() {
+		if (!draft) return;
+		libraryLoading = true;
+		try {
+			library = (await api.listNotes(draft.admin.dir || 'admin', 500)).notes;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+		} finally {
+			libraryLoading = false;
+		}
+	}
+
+	/** Create the starter admin docs that are missing, and wire their mappings. */
+	async function seedAdmin() {
+		if (!draft || seeding) return;
+		seeding = true;
+		try {
+			const dir = draft.admin.dir || 'admin';
+			const existing = new Set((await api.listNotes(dir, 500)).notes);
+			let created = 0;
+			for (const doc of STARTER_DOCS) {
+				const id = `${dir}/${doc.path}`;
+				if (existing.has(id)) continue;
+				await api.createNote(id, doc.content);
+				created += 1;
+			}
+			const templates = { ...draft.admin.templates };
+			const prompts = { ...draft.admin.prompts };
+			for (const doc of STARTER_DOCS) {
+				if (doc.template && !(doc.template in templates))
+					templates[doc.template] = `${dir}/${doc.path}`;
+				if (doc.prompt && !(doc.prompt in prompts)) prompts[doc.prompt] = `${dir}/${doc.path}`;
+			}
+			draft.admin.templates = templates;
+			draft.admin.prompts = prompts;
+			if (!draft.admin.layout_template || draft.admin.layout_template === 'admin/templates/layout')
+				draft.admin.layout_template = `${dir}/${LAYOUT_DOC}`;
+			await loadLibrary();
+			toast.success(
+				created > 0
+					? `Seeded ${created} admin doc${created === 1 ? '' : 's'}`
+					: 'Admin docs already present'
+			);
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+		} finally {
+			seeding = false;
+		}
+	}
+
 	function setTemperature(value: string) {
 		if (draft) draft.agent.temperature = value === '' ? null : Number(value);
 	}
@@ -410,7 +530,8 @@
 				transport: 'http',
 				url: '',
 				headers: {},
-				enabled: true
+				enabled: true,
+				insecure: false
 			} satisfies MCPServerConfig
 		];
 	}
@@ -468,6 +589,7 @@
 			<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>
 			<Tabs.Trigger value="tools">Tools</Tabs.Trigger>
 			<Tabs.Trigger value="mcp">MCP servers</Tabs.Trigger>
+			<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
 		</Tabs.List>
 
 		<Tabs.Content value="agent" class="mt-4 space-y-4">
@@ -669,7 +791,7 @@
 		</Tabs.Content>
 
 		<Tabs.Content value="jobs" class="mt-4 space-y-4">
-			<div class="flex items-center justify-between">
+			<div class="flex flex-wrap items-center justify-between gap-2">
 				<p class="text-sm text-muted-foreground">
 					Each job runs the agent with the instructions below and the enabled tools.
 				</p>
@@ -695,38 +817,37 @@
 			{#each draft.jobs as job, index (index)}
 				<Card.Root>
 					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							{job.name || job.id}
+						<Card.Title class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+							<span class="min-w-0 break-words">{job.name || job.id}</span>
 							<Badge variant={job.enabled ? 'default' : 'secondary'}>
 								{job.enabled ? 'enabled' : 'disabled'}
 							</Badge>
 							{#if statusFor(job.id)?.next_run}
-								<span class="text-xs font-normal text-muted-foreground">
+								<span class="text-xs font-normal break-words text-muted-foreground">
 									next {timeAgo(statusFor(job.id)!.next_run)}
 								</span>
 							{/if}
 						</Card.Title>
-						<Card.Action>
-							<div class="flex gap-2">
-								<Button
-									size="sm"
-									variant={job.enabled ? 'outline' : 'default'}
-									onclick={() => (job.enabled = !job.enabled)}
-								>
-									{job.enabled ? 'Disable' : 'Enable'}
-								</Button>
-								<Button
-									size="sm"
-									variant="outline"
-									disabled={running === job.id}
-									onclick={() => runNow(job.id)}
-								>
-									{running === job.id ? 'Running…' : 'Run now'}
-								</Button>
-								<Button size="sm" variant="ghost" onclick={() => openRuns(job.id)}>History</Button>
-								<Button size="sm" variant="ghost" onclick={() => removeJob(index)}>Remove</Button>
-							</div>
-						</Card.Action>
+						<div class="flex flex-wrap items-center gap-2">
+							<label class="flex cursor-pointer items-center gap-1.5 text-sm font-medium">
+								<Checkbox
+									checked={job.enabled}
+									aria-label={`Enable ${job.name || job.id}`}
+									onCheckedChange={(v) => (job.enabled = v === true)}
+								/>
+								Enable
+							</label>
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={running === job.id}
+								onclick={() => runNow(job.id)}
+							>
+								{running === job.id ? 'Running…' : 'Run now'}
+							</Button>
+							<Button size="sm" variant="ghost" onclick={() => openRuns(job.id)}>History</Button>
+							<Button size="sm" variant="ghost" onclick={() => removeJob(index)}>Remove</Button>
+						</div>
 					</Card.Header>
 					<Card.Content class="grid gap-4 sm:grid-cols-2">
 						<div class="grid gap-2">
@@ -857,18 +978,18 @@
 			</p>
 			<ul class="max-w-3xl divide-y rounded-lg border">
 				{#each settings.tools as tool (tool.name)}
-					<li class="flex items-center gap-3 px-4 py-3">
-						<div class="min-w-0 flex-1">
-							<code class="text-sm font-medium">{tool.name}</code>
-							<p class="text-xs text-muted-foreground">{tool.description}</p>
-						</div>
-						<Button
-							size="sm"
-							variant={toolEnabled(tool) ? 'default' : 'outline'}
-							onclick={() => toggleTool(tool.name, !toolEnabled(tool))}
-						>
-							{toolEnabled(tool) ? 'Enabled' : 'Disabled'}
-						</Button>
+					<li>
+						<label class="flex cursor-pointer items-center gap-3 px-4 py-3">
+							<Checkbox
+								checked={toolEnabled(tool)}
+								aria-label={tool.name}
+								onCheckedChange={(v) => toggleTool(tool.name, v === true)}
+							/>
+							<div class="min-w-0 flex-1">
+								<code class="text-sm font-medium">{tool.name}</code>
+								<p class="text-xs text-muted-foreground">{tool.description}</p>
+							</div>
+						</label>
 					</li>
 				{/each}
 			</ul>
@@ -953,10 +1074,172 @@
 							<p class="text-xs text-muted-foreground">
 								Remote servers only — the librarian has no shell and cannot run local processes.
 							</p>
+							<label class="flex cursor-pointer items-start gap-2">
+								<Checkbox
+									checked={server.insecure ?? false}
+									aria-label={`Skip certificate verification for ${server.name || 'server'}`}
+									onCheckedChange={(v) => (server.insecure = v === true)}
+								/>
+								<span class="text-xs text-muted-foreground">
+									Skip TLS certificate verification (self-signed certificates). Off unless you need
+									it — anyone on the network can read and modify this traffic.
+								</span>
+							</label>
 						</div>
 					</Card.Content>
 				</Card.Root>
 			{/each}
+		</Tabs.Content>
+
+		<Tabs.Content value="templates" class="mt-4 space-y-4">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Vault administration</Card.Title>
+					<Card.Description>
+						Markdown in the vault the librarian manages the vault by — page templates, reusable
+						prompts, and the wiki layout. Edit the content as regular pages.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="grid gap-4 sm:grid-cols-2">
+					<div class="grid gap-2">
+						<Label for="admindir">Admin directory</Label>
+						<Input
+							id="admindir"
+							bind:value={draft.admin.dir}
+							placeholder="admin"
+							spellcheck="false"
+						/>
+						<p class="text-xs text-muted-foreground">Section holding templates and prompts.</p>
+					</div>
+					<div class="grid gap-2">
+						<Label for="layouttpl">Layout template</Label>
+						<Input
+							id="layouttpl"
+							bind:value={draft.admin.layout_template}
+							placeholder="admin/templates/layout"
+							spellcheck="false"
+						/>
+						{#if draft.admin.layout_template}
+							<a
+								href={`/p/${draft.admin.layout_template}`}
+								class="text-xs text-blue-600 hover:underline"
+							>
+								Open page
+							</a>
+						{/if}
+					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Page templates</Card.Title>
+					<Card.Description>
+						Page type slug → template note. New pages of a known type start from their template.
+					</Card.Description>
+					<Card.Action>
+						<Button size="sm" variant="outline" onclick={addTemplate}>Add template</Button>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content class="space-y-2">
+					{#each templateRows() as [key, value] (key)}
+						<div class="flex gap-2">
+							<Input
+								value={key}
+								placeholder="meeting"
+								aria-label="Template type"
+								spellcheck="false"
+								oninput={(e) => setTemplate(e.currentTarget.value, value, key)}
+							/>
+							<Input
+								{value}
+								placeholder="admin/templates/meeting"
+								aria-label="Template note"
+								spellcheck="false"
+								oninput={(e) => setTemplate(key, e.currentTarget.value)}
+							/>
+							<Button size="sm" variant="ghost" onclick={() => removeTemplate(key)}>Remove</Button>
+						</div>
+					{/each}
+					{#if templateRows().length === 0}
+						<p class="text-sm text-muted-foreground">No page templates mapped yet.</p>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Prompts</Card.Title>
+					<Card.Description>
+						Prompt name → prompt note. The librarian reads the note before a run.
+					</Card.Description>
+					<Card.Action>
+						<Button size="sm" variant="outline" onclick={addPrompt}>Add prompt</Button>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content class="space-y-2">
+					{#each promptRows() as [key, value] (key)}
+						<div class="flex gap-2">
+							<Input
+								value={key}
+								placeholder="triage"
+								aria-label="Prompt name"
+								spellcheck="false"
+								oninput={(e) => setPrompt(e.currentTarget.value, value, key)}
+							/>
+							<Input
+								{value}
+								placeholder="admin/prompts/triage"
+								aria-label="Prompt note"
+								spellcheck="false"
+								oninput={(e) => setPrompt(key, e.currentTarget.value)}
+							/>
+							<Button size="sm" variant="ghost" onclick={() => removePrompt(key)}>Remove</Button>
+						</div>
+					{/each}
+					{#if promptRows().length === 0}
+						<p class="text-sm text-muted-foreground">No prompts mapped yet.</p>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>In the vault</Card.Title>
+					<Card.Description>Notes under {draft.admin.dir || 'admin'}.</Card.Description>
+					<Card.Action>
+						<div class="flex gap-2">
+							<Button size="sm" variant="ghost" onclick={loadLibrary}>Refresh</Button>
+							<Button size="sm" variant="outline" disabled={seeding} onclick={seedAdmin}>
+								{seeding ? 'Seeding…' : 'Seed starter set'}
+							</Button>
+						</div>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content>
+					{#if libraryLoading}
+						<p class="text-sm text-muted-foreground">Loading…</p>
+					{:else if library.length === 0}
+						<p class="text-sm text-muted-foreground">
+							Nothing here yet — seed the starter set or create pages under {draft.admin.dir ||
+								'admin'}.
+						</p>
+					{:else}
+						<ul class="divide-y rounded-lg border">
+							{#each library as id (id)}
+								<li>
+									<a
+										href={`/p/${id}`}
+										class="block px-4 py-2 text-sm font-medium text-blue-600 hover:bg-muted"
+									>
+										{id}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</Card.Content>
+			</Card.Root>
 		</Tabs.Content>
 	</Tabs.Root>
 {/if}

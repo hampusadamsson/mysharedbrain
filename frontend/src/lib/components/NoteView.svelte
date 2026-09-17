@@ -4,6 +4,7 @@
 	import { formatProperty, pageUrl, splitFrontmatter, tagList } from '$lib/notes';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import NoteHistory from '$lib/components/NoteHistory.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -20,6 +21,9 @@
 	}
 
 	let { note, onchanged, onerror }: Props = $props();
+
+	// The file log lives behind the Analytics tab; page content is default.
+	let tab = $state('page');
 
 	// Local override for an in-place content save (same id); the prop wins
 	// whenever navigation loads a different note.
@@ -43,12 +47,13 @@
 	const tags = $derived(tagList(meta.tags));
 	const otherProps = $derived(Object.entries(meta).filter(([key]) => key !== 'tags'));
 
-	// A new note id (navigation) always drops back to view mode.
+	// A new note id (navigation) always drops back to view mode on Page.
 	$effect(() => {
 		void note.id;
 		override = null;
 		mode = 'view';
 		error = '';
+		tab = 'page';
 	});
 
 	async function loadBacklinks(id: string) {
@@ -81,6 +86,7 @@
 		draftId = current.id;
 		error = '';
 		mode = 'edit';
+		tab = 'page';
 	}
 
 	function cancelEdit() {
@@ -245,41 +251,52 @@
 	</dl>
 {/if}
 
-{#if mode === 'edit'}
-	<Textarea
-		bind:value={draft}
-		spellcheck="false"
-		aria-label="Page content"
-		class="min-h-[26rem] font-mono text-[13.5px] leading-relaxed"
-	></Textarea>
-{:else if current.content.trim() === ''}
-	<p class="text-sm text-muted-foreground italic">Empty page — hit Edit to write.</p>
-{:else if body.trim() === ''}
-	<p class="text-sm text-muted-foreground italic">Only properties — hit Edit to add content.</p>
-{:else}
-	<article
-		class="wiki-body space-y-3 text-[15px] leading-relaxed [&_a]:text-blue-600 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:bg-muted [&_pre]:p-3 [&_table]:my-3 [&_td]:border [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-1.5"
-	>
-		{@html renderMarkdown(body)}
-	</article>
-{/if}
+<Tabs.Root value={tab} onValueChange={(v) => (tab = v)} class="mt-5">
+	<Tabs.List>
+		<Tabs.Trigger value="page">Page</Tabs.Trigger>
+		<Tabs.Trigger value="analytics">Analytics</Tabs.Trigger>
+	</Tabs.List>
+	<Tabs.Content value="page">
+		{#if mode === 'edit'}
+			<Textarea
+				bind:value={draft}
+				spellcheck="false"
+				aria-label="Page content"
+				class="min-h-[26rem] font-mono text-[13.5px] leading-relaxed"
+			></Textarea>
+		{:else if current.content.trim() === ''}
+			<p class="text-sm text-muted-foreground italic">Empty page — hit Edit to write.</p>
+		{:else if body.trim() === ''}
+			<p class="text-sm text-muted-foreground italic">Only properties — hit Edit to add content.</p>
+		{:else}
+			<article
+				class="wiki-body space-y-3 text-[15px] leading-relaxed [&_a]:text-blue-600 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:bg-muted [&_pre]:p-3 [&_table]:my-3 [&_td]:border [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-1.5"
+			>
+				{@html renderMarkdown(body)}
+			</article>
+		{/if}
 
-{#if backlinks.length > 0}
-	<div class="mt-8 border-t pt-4">
-		<h2 class="text-xs font-bold tracking-wider text-muted-foreground">BACKLINKS</h2>
-		<ul class="mt-2 space-y-1">
-			{#each backlinks as link (link)}
-				<li>
-					<a href={pageUrl(link)} class="text-sm text-blue-600 hover:underline">{link}</a>
-				</li>
-			{/each}
-		</ul>
-	</div>
-{/if}
-
-{#key current.id}
-	<NoteHistory noteId={current.id} version={historyVersion} />
-{/key}
+		{#if backlinks.length > 0}
+			<div class="mt-8 border-t pt-4">
+				<h2 class="text-xs font-bold tracking-wider text-muted-foreground">BACKLINKS</h2>
+				<ul class="mt-2 space-y-1">
+					{#each backlinks as link (link)}
+						<li>
+							<a href={pageUrl(link)} class="text-sm text-blue-600 hover:underline">{link}</a>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	</Tabs.Content>
+	<Tabs.Content value="analytics">
+		{#if tab === 'analytics'}
+			{#key current.id}
+				<NoteHistory noteId={current.id} version={historyVersion} />
+			{/key}
+		{/if}
+	</Tabs.Content>
+</Tabs.Root>
 
 <Dialog.Root bind:open={moveOpen}>
 	<Dialog.Content>

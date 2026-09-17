@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { tick } from 'svelte';
+	import * as Pagination from '$lib/components/ui/pagination';
 
 	interface Props {
 		/**
@@ -36,9 +37,27 @@
 	const from = $derived(known && total === 0 ? 0 : offset + 1);
 	// Without a reported total, the honest upper bound is this page's last row.
 	const to = $derived(known ? Math.min(offset + limit, total as number) : offset + count);
-	const canPrev = $derived(offset > 0);
-	// Without a total, a full page is the only signal that more may follow.
+	// A full page is the only signal that more may follow.
 	const canNext = $derived(known ? offset + limit < (total as number) : count >= limit);
+	const currentPage = $derived(Math.floor(offset / limit) + 1);
+	// Controlled from props: the parent owns the offset, so after reporting a
+	// navigation the binding is reset to what is rendered — the control never
+	// drifts, even when the parent keeps the old offset (e.g. a failed load).
+	// Writable on purpose: the page control writes through bind:page and go()
+	// resets it after reporting, so this never drifts from the parent's offset.
+	// eslint-disable-next-line svelte/prefer-writable-derived
+	let pageNum = $state(1);
+	$effect(() => {
+		pageNum = currentPage;
+	});
+	async function go(p: number) {
+		onchange((p - 1) * limit);
+		await tick();
+		pageNum = currentPage;
+	}
+	// The page control needs a finite item count: with no total, pretend one
+	// extra page exists exactly when more rows may follow.
+	const rootCount = $derived(known ? (total as number) : offset + count + (canNext ? limit : 0));
 </script>
 
 <div class="flex flex-wrap items-center justify-between gap-2 pt-3">
@@ -50,22 +69,14 @@
 			Showing {from}–{to}
 		{/if}
 	</p>
-	<div class="flex gap-2">
-		<Button
-			size="sm"
-			variant="outline"
-			disabled={disabled || !canPrev}
-			onclick={() => onchange(Math.max(0, offset - limit))}
-		>
-			Previous
-		</Button>
-		<Button
-			size="sm"
-			variant="outline"
-			disabled={disabled || !canNext}
-			onclick={() => onchange(offset + limit)}
-		>
-			Next
-		</Button>
-	</div>
+	<Pagination.Root bind:page={pageNum} count={rootCount} perPage={limit} onPageChange={go}>
+		<Pagination.Content class="gap-2">
+			<Pagination.Item>
+				<Pagination.Previous aria-label="Previous" {disabled} />
+			</Pagination.Item>
+			<Pagination.Item>
+				<Pagination.Next aria-label="Next" {disabled} />
+			</Pagination.Item>
+		</Pagination.Content>
+	</Pagination.Root>
 </div>

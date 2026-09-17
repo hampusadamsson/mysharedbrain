@@ -2,6 +2,8 @@
 	import { api, FEEDBACK_KINDS, type Answer } from '$lib/api/client';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import { refreshPending, space } from '$lib/stores/space.svelte';
 	import { pageUrl } from '$lib/notes';
 	import { toast } from 'svelte-sonner';
@@ -95,22 +97,24 @@
 	}}
 >
 	<div class="flex gap-2">
-		<select
-			bind:value={kind}
-			aria-label="Feedback kind"
-			class="h-9 rounded-md border bg-transparent px-2.5 text-sm"
-		>
-			{#each FEEDBACK_KINDS as option (option.value)}
-				<option value={option.value}>{option.label}</option>
-			{/each}
-		</select>
+		<Select.Root type="single" value={kind} onValueChange={(v) => (kind = v as typeof kind)}>
+			<Select.Trigger aria-label="Feedback kind" class="w-36">
+				{FEEDBACK_KINDS.find((o) => o.value === kind)?.label ?? kind}
+			</Select.Trigger>
+			<Select.Content>
+				{#each FEEDBACK_KINDS as option (option.value)}
+					<Select.Item value={option.value}>{option.label}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
 		<Input bind:value={noteId} placeholder="Page (optional)" autocomplete="off" />
 	</div>
-	<textarea
+	<Textarea
 		bind:value={body}
 		placeholder="What should the librarian know?"
 		aria-label="Feedback body"
-		class="min-h-24 rounded-md border bg-transparent p-2.5 text-sm"></textarea>
+		class="min-h-24"
+	/>
 	<div class="flex items-center gap-3">
 		<Button type="submit" disabled={!body.trim() || queueing}>Queue feedback</Button>
 		<a href="/capture" class="text-sm text-blue-600 hover:underline">

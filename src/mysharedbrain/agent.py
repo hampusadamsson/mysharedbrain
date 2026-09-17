@@ -17,6 +17,7 @@ import contextlib
 import inspect
 import os
 import time
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -59,10 +60,17 @@ MODEL_CHECK_TIMEOUT = 20.0
 #: filtered at runtime — a name whose SDK is not installed is reported as
 #: unavailable with the install hint, and the list only needs a name added here
 #: when the library gains a provider we care about.
+#: OpenCode Zen Go (https://opencode.ai/zen/go/v1): OpenAI-compatible gateway.
+#: Not a pydantic-ai provider name, so it is aliased onto OpenAI below.
+OPENCODE_BASE_URL = "https://opencode.ai/zen/go/v1"
+OPENCODE_PROVIDER_NAMES: tuple[str, ...] = ("opencode", "opencode-go")
+
 PROVIDER_CANDIDATES: tuple[str, ...] = (
     "openai",
     "openai-chat",
     "openai-responses",
+    "opencode",
+    "opencode-go",
     "azure",
     "azure-responses",
     "anthropic",
@@ -120,10 +128,29 @@ class ProviderInfo:
     hint: str = ""
 
 
+def _is_opencode(name: str) -> bool:
+    """OpenCode Zen Go alias (`opencode` / `opencode-go`)."""
+    return name.strip().lower() in OPENCODE_PROVIDER_NAMES
+
+
+def _user_agent() -> str:
+    """Own user agent: Zen asks clients not to use a generic SDK name."""
+    try:
+        from importlib.metadata import version
+
+        return f"mysharedbrain/{version('mysharedbrain')}"
+    except Exception:
+        return "mysharedbrain/0.1.0"
+
+
 def _provider_class(name: str) -> type[Any]:
     """The provider class pydantic-ai would use (lazily imported by it)."""
     from pydantic_ai.providers import infer_provider_class
 
+    if _is_opencode(name):
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        return OpenAIProvider
     return infer_provider_class(name)
 
 
@@ -205,6 +232,39 @@ def provider_kwargs(cls: type[Any], cfg: BrainConfigDocument) -> dict[str, Any]:
     return kwargs
 
 
+def _opencode_provider(cfg: BrainConfigDocument) -> tuple[Any, str]:
+    """OpenAI client for Zen Go: default endpoint + session headers.
+
+    Zen asks clients to send a stable ``x-opencode-session`` per conversation
+    (routing/prompt caching) and their own user agent. One provider instance
+    serves one agent run, so a fresh id per build is one session per run;
+    ``provider.options.session_id`` pins it when a stable id is wanted.
+    Chat completions cover most Go models; that is the inference path used.
+    """
+    from openai import AsyncOpenAI
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    wanted = cfg.agent.provider
+    if wanted.api_version:
+        raise ValueError("provider OpenAIProvider does not accept api_version")
+    unknown = sorted(k for k in wanted.options if k not in ("session_id", "user_agent"))
+    if unknown:
+        raise ValueError(
+            f"provider OpenAIProvider does not accept {', '.join(unknown)}; "
+            "it takes: base_url, api_key, session_id, user_agent"
+        )
+    base_url = wanted.base_url.strip() or OPENCODE_BASE_URL
+    token = cfg.agent.api_key or os.environ.get(cfg.agent.api_key_env, "")
+    session_id = wanted.options.get("session_id", "").strip() or uuid.uuid4().hex
+    user_agent = wanted.options.get("user_agent", "").strip() or _user_agent()
+    client = AsyncOpenAI(
+        base_url=base_url,
+        api_key=token or "api-key-not-set",
+        default_headers={"x-opencode-session": session_id, "User-Agent": user_agent},
+    )
+    return OpenAIProvider(openai_client=client), session_id
+
+
 def build_model(cfg: BrainConfigDocument) -> Model:
     """The model to run: any provider, any endpoint, from the config.
 
@@ -220,6 +280,10 @@ def build_model(cfg: BrainConfigDocument) -> Model:
         return infer_model(model_id)  # known model names such as "test"
     if not provider_name:
         provider_name = model_id.split(":", 1)[0]
+    if _is_opencode(provider_name):
+        provider, _session = _opencode_provider(cfg)
+        bare = model_id.split(":", 1)[1] if ":" in model_id else model_id
+        return infer_model(f"openai-chat:{bare}", provider_factory=lambda _n: provider)
     cls = _provider_class(provider_name)
     provider = cls(**provider_kwargs(cls, cfg))
     return infer_model(model_id, provider_factory=lambda _name: provider)
@@ -244,13 +308,16 @@ def mcp_transport(server: MCPServerConfig) -> Any:
     """fastmcp transport for a server config — shared by toolsets and checks.
 
     Remote only: there is no stdio branch, so nothing here can spawn a process.
+    ``insecure`` disables TLS certificate verification (self-signed certs);
+    verification stays on unless it is explicitly set.
     """
     from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 
     headers = server.headers or None
+    verify = False if server.insecure else None
     if server.transport == "sse":
-        return SSETransport(server.url, headers=headers)
-    return StreamableHttpTransport(server.url, headers=headers)
+        return SSETransport(server.url, headers=headers, verify=verify)
+    return StreamableHttpTransport(server.url, headers=headers, verify=verify)
 
 
 def mcp_client(server: MCPServerConfig) -> Client[Any]:
@@ -396,11 +463,35 @@ def _resolve_api_key(cfg: BrainConfigDocument) -> None:
         os.environ[agent.api_key_env] = agent.api_key
 
 
+def admin_instructions(cfg: BrainConfigDocument) -> str:
+    """Where the vault's admin docs live: templates, prompts, layout.
+
+    Always present, so the librarian manages the vault by these docs — page
+    types get their template, new pages follow the layout, reusable prompts
+    are read from their notes. Missing notes are fine: the librarian reads
+    them with its tools and creates what does not exist yet.
+    """
+    admin = cfg.admin
+    lines = [
+        f"Vault administration lives under `{admin.dir}/`.",
+        f"New pages follow the wiki layout in `{admin.layout_template}`.",
+        f"Page-type templates live under `{admin.dir}/templates/`.",
+        f"Reusable prompts live under `{admin.dir}/prompts/`.",
+    ]
+    for name, ref in sorted(admin.templates.items()):
+        lines.append(f"Page type `{name}` uses the template in `{ref}`.")
+    for name, ref in sorted(admin.prompts.items()):
+        lines.append(f"Prompt `{name}` is the markdown in `{ref}`.")
+    return "\n".join(lines)
+
+
 def load_instructions(cfg: BrainConfigDocument, lib: Librarian) -> str:
     """Standing vault instructions: note markdown (if present) + inline text.
 
     The note is a normal vault file, so the librarian can rewrite its own
-    directions in a scheduled job — that is the intended workflow.
+    directions in a scheduled job — that is the intended workflow. The admin
+    section (templates, prompts, layout) is always appended, so the librarian
+    manages the vault by those docs.
     """
     parts: list[str] = []
     note_id = cfg.agent.instructions_file.strip()
@@ -410,6 +501,7 @@ def load_instructions(cfg: BrainConfigDocument, lib: Librarian) -> str:
             parts.append(lib.read_note(note_id).content.strip())
     if cfg.agent.instructions.strip():
         parts.append(cfg.agent.instructions.strip())
+    parts.append(admin_instructions(cfg))
     return "\n\n".join(p for p in parts if p)
 
 
@@ -505,10 +597,13 @@ async def run_agent(
 __all__ = [
     "MCP_CHECK_TIMEOUT",
     "MODEL_CHECK_TIMEOUT",
+    "OPENCODE_BASE_URL",
+    "OPENCODE_PROVIDER_NAMES",
     "PROVIDER_CANDIDATES",
     "AgentOutcome",
     "ConnectionCheck",
     "ProviderInfo",
+    "admin_instructions",
     "build_agent",
     "build_mcp_toolsets",
     "build_model",

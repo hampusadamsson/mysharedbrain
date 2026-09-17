@@ -109,7 +109,7 @@
 		{kind === null ? emptyText : 'Nothing of that kind here.'}
 	</p>
 {:else}
-	<ul class="mt-3 divide-y rounded-lg border">
+	<ul aria-label="Interactions" class="mt-3 divide-y rounded-lg border">
 		{#each entries as entry (entry.ts + entry.action + entry.actor + entry.note_id)}
 			<li class="flex gap-3 px-4 py-2.5">
 				<span

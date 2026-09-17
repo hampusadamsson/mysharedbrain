@@ -152,6 +152,41 @@ with the list of what the provider does accept rather than being ignored.
 page offers it as a dropdown and shows a missing SDK with its install hint instead
 of failing later. The **Test model** check exercises the real endpoint.
 
+`opencode` (alias `opencode-go`) is the OpenCode Zen Go gateway
+(`https://opencode.ai/zen/go/v1`, OpenAI-compatible). Empty `base_url` uses that
+endpoint; each run sends its own `x-opencode-session` id plus a `mysharedbrain`
+user agent, as Zen asks. Pin the session with
+`provider.options: {session_id: <stable-id>}` when one conversation must span runs
+(`user_agent` overrides the default `mysharedbrain/<version>` agent).
+
+```yaml
+agent:
+  model: kimi-k2.7-code
+  provider: { name: opencode }
+  api_key_env: OPENCODE_API_KEY
+```
+
+### MCP servers
+
+Remote (`http`/`sse`) servers only — `stdio` is refused because the librarian
+has no shell. Each entry takes a `url`, extra `headers`, an `enabled` switch,
+and `insecure` (default `false`):
+
+```yaml
+mcp_servers:
+  - name: lab
+    transport: http
+    url: https://lab/mcp
+    headers: { Authorization: 'Bearer …' }
+    enabled: true
+    insecure: false
+```
+
+`insecure: true` skips TLS certificate verification (self-signed certificates).
+Only enable it for a server you trust on a network you trust: without
+verification, anyone on the network path can read and modify the traffic,
+including headers and tool payloads.
+
 ```yaml
 agent:
   model: openai:gpt-4o-mini
@@ -264,6 +299,25 @@ holds the sidecar state, and its indexes are chosen from measured query plans
 the two counter summaries are seeks or index-only reads, not scans. `PRAGMA
 optimize` runs on connection close so the planner's statistics stay in step with
 the log.
+
+## Vault administration
+
+The `admin/` section holds markdown the librarian manages the vault by:
+`admin/templates/` for page-type templates, `admin/prompts/` for reusable
+prompts, and `admin/templates/layout` for the wiki layout new pages follow.
+The standing instructions always name these docs (see `admin_instructions`),
+so every run reads its template before creating a page and its prompt before
+a job. The Templates tab in settings edits the mappings (`admin.dir`,
+`layout_template`, per-type `templates`, named `prompts`), lists what is in
+the vault, and seeds a starter set through the regular notes API.
+
+```yaml
+admin:
+  dir: admin
+  layout_template: admin/templates/layout
+  templates: { meeting: admin/templates/meeting }
+  prompts: { triage: admin/prompts/triage }
+```
 
 ## File log
 

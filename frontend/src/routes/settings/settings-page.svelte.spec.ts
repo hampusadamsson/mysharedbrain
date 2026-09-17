@@ -9,7 +9,9 @@ const api = vi.hoisted(() => ({
 	updateSettings: vi.fn(),
 	testMcpServer: vi.fn(),
 	testModel: vi.fn(),
-	modelProviders: vi.fn()
+	modelProviders: vi.fn(),
+	listNotes: vi.fn(),
+	createNote: vi.fn()
 }));
 
 /** The catalog the server reports: what this install can import. */
@@ -120,6 +122,12 @@ function payload(jobs: BrainConfigDoc['jobs'] = SHIPPED_JOBS): SettingsPayload {
 			temperature: 0.2
 		},
 		scheduler: { enabled: false, tick_seconds: 30, run_on_start: false },
+		admin: {
+			dir: 'admin',
+			layout_template: 'admin/templates/layout',
+			templates: {},
+			prompts: {}
+		},
 		tools: { delete_note: { enabled: false } },
 		mcp_servers: [
 			{
@@ -127,14 +135,16 @@ function payload(jobs: BrainConfigDoc['jobs'] = SHIPPED_JOBS): SettingsPayload {
 				transport: 'http',
 				url: 'https://a.example.com/mcp',
 				headers: {},
-				enabled: true
+				enabled: true,
+				insecure: false
 			},
 			{
 				name: 'broken',
 				transport: 'http',
 				url: 'https://b.example.com/mcp',
 				headers: {},
-				enabled: true
+				enabled: true,
+				insecure: false
 			}
 		],
 		jobs,
@@ -172,6 +182,11 @@ beforeEach(() => {
 		current: 'openai',
 		model: 'openai:gpt-4o-mini'
 	});
+	api.listNotes.mockResolvedValue({ notes: [] });
+	api.createNote.mockImplementation(async (id: string, content = '') => ({
+		id,
+		content
+	}));
 });
 /** Render with the tab the way a refresh would arrive: via the URL. */
 async function openTab(name: string) {
@@ -256,6 +271,41 @@ describe('settings · mcp connect check', () => {
 		expect(api.testMcpServer).toHaveBeenCalledWith(
 			expect.objectContaining({ name: 'broken', enabled: true })
 		);
+	});
+});
+
+describe('settings · mcp insecure', () => {
+	it('offers a certificate-verification checkbox per server, off by default', async () => {
+		await openMcp();
+
+		const boxes = page.getByRole('checkbox', { name: /skip certificate verification/i });
+		await expect.element(boxes.first()).toBeVisible();
+		expect(boxes.elements()).toHaveLength(2);
+		await expect.element(boxes.first()).not.toBeChecked();
+	});
+
+	it('checking it marks the form unsaved and persists insecure', async () => {
+		api.updateSettings.mockImplementation(async (config: BrainConfigDoc) => ({
+			...(await payload()),
+			config
+		}));
+		await openMcp();
+
+		await page
+			.getByRole('checkbox', { name: /skip certificate verification/i })
+			.first()
+			.click();
+
+		await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect
+			.poll(() => api.updateSettings)
+			.toHaveBeenCalledWith(
+				expect.objectContaining({
+					mcp_servers: expect.arrayContaining([expect.objectContaining({ insecure: true })])
+				})
+			);
 	});
 });
 
@@ -534,7 +584,8 @@ describe('settings · tab in the url', () => {
 		['agent', 'Agent'],
 		['jobs', 'Jobs'],
 		['tools', 'Tools'],
-		['mcp', 'MCP servers']
+		['mcp', 'MCP servers'],
+		['templates', 'Templates']
 	])('stays on %s after a refresh', async (name, label) => {
 		await openTab(name);
 
@@ -608,12 +659,51 @@ describe('settings · jobs', () => {
 	it('drops the notice once a job is enabled', async () => {
 		await openJobs();
 
-		await page.getByRole('button', { name: 'Enable' }).first().click();
+		await page.getByRole('checkbox', { name: 'Enable Capture triage' }).click();
 
 		await expect.element(jobsPanel().getByText(/^enabled$/)).toBeVisible();
 		// scheduler is still off, so the notice stays but stops blaming the jobs
 		await expect.element(page.getByText(/Nothing runs yet/)).toBeVisible();
 		expect(page.getByText(/every job is disabled/).elements()).toHaveLength(0);
+	});
+
+	it('renders enable as a checkbox per job, checked to match state', async () => {
+		await openJobs();
+
+		for (const name of ['Capture triage', 'Vault maintenance sweep', 'Source freshness']) {
+			await expect.element(page.getByRole('checkbox', { name: `Enable ${name}` })).toBeVisible();
+			await expect
+				.element(page.getByRole('checkbox', { name: `Enable ${name}` }))
+				.not.toBeChecked();
+		}
+	});
+
+	it('unchecking an enabled job flips it back to disabled', async () => {
+		const running = payload(
+			SHIPPED_JOBS.map((job, i): BrainConfigDoc['jobs'][number] => ({
+				...job,
+				enabled: i === 0
+			}))
+		);
+		api.getSettings.mockResolvedValue(running);
+		await openJobs();
+
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Enable Capture triage' }))
+			.toBeChecked();
+
+		await page.getByRole('checkbox', { name: 'Enable Capture triage' }).click();
+
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Enable Capture triage' }))
+			.not.toBeChecked();
+		await expect
+			.element(
+				jobsPanel()
+					.getByText(/^disabled$/)
+					.first()
+			)
+			.toBeVisible();
 	});
 
 	it('hides the notice when the scheduler and a job are both on', async () => {
@@ -719,5 +809,126 @@ describe('settings · job tools', () => {
 		await expect
 			.element(off)
 			.toHaveAttribute('title', 'delete_note is switched off in the Tools tab');
+	});
+});
+
+describe('settings · tools tab', () => {
+	async function openTools() {
+		await openTab('tools');
+	}
+
+	it('renders one checkbox per tool, checked to match enabled', async () => {
+		await openTools();
+
+		await expect.element(page.getByRole('checkbox', { name: 'read_note' })).toBeVisible();
+		await expect.element(page.getByRole('checkbox', { name: 'patch_note' })).toBeVisible();
+		await expect.element(page.getByRole('checkbox', { name: 'delete_note' })).toBeVisible();
+		await expect.element(page.getByRole('checkbox', { name: 'read_note' })).toBeChecked();
+		await expect.element(page.getByRole('checkbox', { name: 'delete_note' })).not.toBeChecked();
+	});
+
+	it('toggling a checkbox flips the tool without a save round-trip', async () => {
+		await openTools();
+
+		await page.getByRole('checkbox', { name: 'delete_note' }).click();
+		await expect.element(page.getByRole('checkbox', { name: 'delete_note' })).toBeChecked();
+
+		await page.getByRole('checkbox', { name: 'read_note' }).click();
+		await expect.element(page.getByRole('checkbox', { name: 'read_note' })).not.toBeChecked();
+	});
+});
+
+describe('settings · templates tab', () => {
+	async function openTemplates() {
+		await openTab('templates');
+	}
+
+	it('shows the admin section defaults and an empty library', async () => {
+		await openTemplates();
+
+		await expect.element(page.getByLabelText('Admin directory')).toHaveValue('admin');
+		await expect
+			.element(page.getByLabelText('Layout template'))
+			.toHaveValue('admin/templates/layout');
+		await expect.element(page.getByText(/Nothing here yet/)).toBeVisible();
+		await expect.element(page.getByText(/No page templates mapped yet/)).toBeVisible();
+		await expect.element(page.getByText(/No prompts mapped yet/)).toBeVisible();
+		await expect.poll(() => api.listNotes).toHaveBeenCalledWith('admin', 500);
+	});
+
+	it('editing the admin directory marks the form unsaved', async () => {
+		await openTemplates();
+
+		await page.getByLabelText('Admin directory').fill('meta');
+
+		await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+	});
+
+	it('adds a template mapping and saves it with the config', async () => {
+		api.updateSettings.mockImplementation(async (config: BrainConfigDoc) => ({
+			...(await payload()),
+			config
+		}));
+		await openTemplates();
+
+		await page.getByRole('button', { name: 'Add template' }).click();
+		await page.getByLabelText('Template type').fill('meeting');
+		await page.getByLabelText('Template note').fill('admin/templates/meeting');
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect
+			.poll(() => api.updateSettings)
+			.toHaveBeenCalledWith(
+				expect.objectContaining({
+					admin: expect.objectContaining({
+						templates: { meeting: 'admin/templates/meeting' }
+					})
+				})
+			);
+	});
+
+	it('seeds the starter docs and wires their mappings', async () => {
+		await openTemplates();
+
+		await page.getByRole('button', { name: 'Seed starter set' }).click();
+
+		await expect.poll(() => api.createNote).toHaveBeenCalledWith('admin/index', expect.any(String));
+		await expect
+			.poll(() => api.createNote)
+			.toHaveBeenCalledWith('admin/templates/layout', expect.any(String));
+		expect(api.createNote).toHaveBeenCalledTimes(7);
+		// mappings are wired into the draft, unsaved until Save
+		expect(api.updateSettings).not.toHaveBeenCalled();
+		await expect.element(page.getByLabelText('Template type').first()).toHaveValue('meeting');
+	});
+
+	it('skips starter docs that already exist', async () => {
+		api.listNotes.mockResolvedValue({
+			notes: [
+				'admin/index',
+				'admin/templates/layout',
+				'admin/templates/meeting',
+				'admin/templates/project',
+				'admin/templates/person',
+				'admin/prompts/capture-triage',
+				'admin/prompts/vault-sweep'
+			]
+		});
+		await openTemplates();
+
+		await page.getByRole('button', { name: 'Seed starter set' }).click();
+
+		await expect.poll(() => api.listNotes).toHaveBeenCalled();
+		expect(api.createNote).not.toHaveBeenCalled();
+	});
+
+	it('lists admin notes with links to their pages', async () => {
+		api.listNotes.mockResolvedValue({ notes: ['admin/index', 'admin/templates/layout'] });
+		await openTemplates();
+
+		await expect.element(page.getByRole('link', { name: 'admin/index' })).toBeVisible();
+		await expect
+			.element(page.getByRole('link', { name: 'admin/index' }))
+			.toHaveAttribute('href', '/p/admin/index');
 	});
 });

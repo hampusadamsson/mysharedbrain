@@ -23,6 +23,32 @@ wheels/
 # OS
 .DS_Store
 
+# Frontend installs, build output and caches
+node_modules/
+frontend/node_modules/
+.svelte-kit/
+frontend/.svelte-kit/
+frontend/build/
+coverage/
+.vitest/
+
+# Browser-test artifacts (failure screenshots, attachments)
+frontend/.vitest-attachments/
+**/__screenshots__/
+
+# Python caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local env (may hold tokens) — commit .env.example instead
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
 # Brain config (may hold a token) — commit brain.example.yaml instead
 /brain.yaml
 brain.yaml
