@@ -584,13 +584,17 @@
 	</p>
 
 	<Tabs.Root value={tab} onValueChange={selectTab} class="mt-4">
-		<Tabs.List>
-			<Tabs.Trigger value="agent">Agent</Tabs.Trigger>
-			<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>
-			<Tabs.Trigger value="tools">Tools</Tabs.Trigger>
-			<Tabs.Trigger value="mcp">MCP servers</Tabs.Trigger>
-			<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
-		</Tabs.List>
+		<!-- The tab list is `inline-flex w-fit`, so it cannot shrink: on a 360px
+		     phone the five triggers overflow the page. Scroll it instead. -->
+		<div class="-mx-1 overflow-x-auto px-1">
+			<Tabs.List>
+				<Tabs.Trigger value="agent">Agent</Tabs.Trigger>
+				<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>
+				<Tabs.Trigger value="tools">Tools</Tabs.Trigger>
+				<Tabs.Trigger value="mcp">MCP servers</Tabs.Trigger>
+				<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
+			</Tabs.List>
+		</div>
 
 		<Tabs.Content value="agent" class="mt-4 space-y-4">
 			<Card.Root>

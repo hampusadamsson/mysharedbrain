@@ -89,6 +89,16 @@ for (const vp of VIEWPORTS) {
 	}
 }
 
+// Render checks: a route that fails to render can look "fine" to an overflow
+// check, so assert the settings page actually produced its tab list.
+await page.setViewportSize({ width: 390, height: 844 });
+await page.goto(BASE + '/settings', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const rendered = await page.locator('text=/MCP servers|Agent/').count();
+if (rendered === 0) {
+	issues.push('mobile-390 /settings: page did not render (no tabs found) — API error?');
+}
+
 // Mobile-specific behaviours
 for (const vp of [VIEWPORTS[0], VIEWPORTS[1]]) {
 	await page.setViewportSize({ width: vp.width, height: vp.height });
