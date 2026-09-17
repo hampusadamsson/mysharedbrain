@@ -61,10 +61,12 @@
 	<Button variant="ghost" size="icon" class="md:hidden" onclick={onmenu} aria-label="Menu">
 		<Menu class="size-5" />
 	</Button>
-	<a href="/" class="flex items-center gap-2 font-semibold">
+	<!-- Brand hides on phones: with the search box, theme toggle, create button
+	     and avatar, it is what pushes the bar past a 360px viewport. -->
+	<a href="/" class="hidden items-center gap-2 font-semibold sm:flex">
 		<span>MySharedBrain</span>
 	</a>
-	<div class="relative mx-auto w-full max-w-md">
+	<div class="relative mx-auto w-full max-w-md min-w-0">
 		<Search class="absolute top-2.5 left-3 size-4 text-muted-foreground" />
 		<Input
 			bind:value={q}
@@ -125,7 +127,7 @@
 		<Plus class="size-4" /> <span class="hidden sm:inline">Create</span>
 	</Button>
 	<span
-		class="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white"
+		class="hidden size-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white sm:flex"
 		title="You"
 	>
 		Y

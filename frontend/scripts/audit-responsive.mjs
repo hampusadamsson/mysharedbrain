@@ -17,15 +17,24 @@ const VIEWPORTS = [
 	{ name: 'desktop-1280', width: 1280, height: 800 },
 	{ name: 'desktop-1440', width: 1440, height: 900 }
 ];
-const ROUTES = [
-	'/',
-	'/ask',
-	'/capture',
-	'/activity',
-	'/p/Test',
-	'/p/e2e/responsive',
-	'/search?q=Test'
-];
+const STATIC_ROUTES = ['/', '/ask', '/capture', '/activity', '/settings', '/search?q=test'];
+
+/** Page route that exists in whatever vault we audit (plus its folder). */
+async function vaultRoutes() {
+	try {
+		const res = await fetch(`${BASE}/api/notes`);
+		const { notes } = await res.json();
+		const routes = [];
+		if (notes?.length) routes.push(`/p/${notes[0]}`);
+		const nested = notes?.find((n) => n.includes('/'));
+		if (nested) routes.push(`/p/${nested.split('/')[0]}`);
+		return routes;
+	} catch {
+		return [];
+	}
+}
+
+const ROUTES = [...STATIC_ROUTES, ...(await vaultRoutes())];
 
 const issues = [];
 const browser = await chromium.launch();
