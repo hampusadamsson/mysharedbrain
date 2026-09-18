@@ -13,6 +13,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { timeAgo } from '$lib/notes';
 	import { refreshPending } from '$lib/stores/space.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 
 	const PAGE_SIZE = 20;
@@ -35,7 +36,7 @@
 	let total = $state(0);
 	let offset = $state(0);
 	let loading = $state(true);
-	let expanded = $state(new Set<string>());
+	let expanded = new SvelteSet<string>();
 
 	async function load() {
 		loading = true;
@@ -75,10 +76,8 @@
 	}
 
 	function toggleExpanded(id: string) {
-		const next = new Set(expanded);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		expanded = next;
+		if (expanded.has(id)) expanded.delete(id);
+		else expanded.add(id);
 	}
 
 	function review(entry: FeedbackEntry, verdict: 'approved') {
