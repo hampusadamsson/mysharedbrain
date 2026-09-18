@@ -151,6 +151,8 @@ export interface AskConfig {
 	tools: string[] | null;
 	mcp_servers: string[] | null;
 	max_steps: number | null;
+	/** Cap on one question, in seconds (5–600); the Ask page spins until then. */
+	timeout_seconds: number;
 }
 
 /** Remote only: a local (stdio) MCP server would be shell access. */

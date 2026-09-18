@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from mysharedbrain import capture
 from mysharedbrain.api_settings import router as settings_router
-from mysharedbrain.ask import run_ask
+from mysharedbrain.ask import AskTimeout, run_ask
 from mysharedbrain.audit import KINDS, LogStats
 from mysharedbrain.config import load_config
 from mysharedbrain.jobs import get_scheduler
@@ -42,7 +42,11 @@ _CONFLICT = (NoteExists, capture.EntryAlreadyReviewed)
 
 
 def _http_error(request: Request, exc: Exception) -> JSONResponse:
-    if isinstance(exc, _NOT_FOUND):
+    if isinstance(exc, AskTimeout):
+        # The run was cut short by ask.timeout_seconds: the caller waited, and
+        # nothing changed in the vault, so 504 with the configured cap.
+        code = 504
+    elif isinstance(exc, _NOT_FOUND):
         code = 404
     elif isinstance(exc, _CONFLICT):
         code = 409
@@ -252,7 +256,7 @@ def create_app() -> FastAPI:
             "Interactive docs here; MCP tools mirror every route."
         ),
     )
-    for exc in (*_NOT_FOUND, *_CONFLICT, InvalidNoteId, ValueError):
+    for exc in (*_NOT_FOUND, *_CONFLICT, InvalidNoteId, AskTimeout, ValueError):
         app.exception_handler(exc)(_http_error)
 
     app.include_router(settings_router)

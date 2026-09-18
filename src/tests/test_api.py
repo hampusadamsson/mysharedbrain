@@ -143,6 +143,22 @@ def test_request_runs_one_ask_run(
     assert found["message"] == "homelab runs k3s."
 
 
+def test_request_reports_a_timeout_as_504(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run cut short by ask.timeout_seconds must not look like a bad request."""
+    from mysharedbrain.ask import AskTimeout
+
+    async def fake(*args: object, **kwargs: object) -> None:
+        raise AskTimeout("the librarian did not finish within 60s")
+
+    monkeypatch.setattr(app_module, "run_ask", fake)
+    c = client(vault_dir)
+    res = c.post("/api/request", json={"question": "k3s"})
+    assert res.status_code == 504
+    assert "did not finish within 60s" in res.json()["detail"]
+
+
 def test_request_refuses_when_ask_is_disabled(
     vault_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

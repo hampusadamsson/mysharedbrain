@@ -139,7 +139,8 @@ function payload(jobs: BrainConfigDoc['jobs'] = SHIPPED_JOBS): SettingsPayload {
 			instructions_file: null,
 			tools: null,
 			mcp_servers: null,
-			max_steps: null
+			max_steps: null,
+			timeout_seconds: 60
 		},
 		tools: { delete_note: { enabled: false } },
 		mcp_servers: [
@@ -399,6 +400,36 @@ describe('settings · job mcp servers', () => {
 		await expect
 			.element(page.getByText(/read from the seed file \(nothing saved yet\)/))
 			.toBeVisible();
+	});
+});
+
+describe('settings · ask timeout', () => {
+	it('shows the stored timeout, marks the form unsaved and persists an edit', async () => {
+		api.updateSettings.mockResolvedValue(payload());
+		await openTab('ask');
+
+		const field = page.getByLabelText('Timeout (seconds)');
+		await expect.element(field).toHaveValue(60);
+
+		await field.fill('90');
+		await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect.poll(() => api.updateSettings).toHaveBeenCalled();
+		const sent = api.updateSettings.mock.calls.at(-1)?.[0] as BrainConfigDoc;
+		expect(sent.ask.timeout_seconds).toBe(90);
+	});
+
+	it('clamps an out-of-range value to the config bounds', async () => {
+		api.updateSettings.mockResolvedValue(payload());
+		await openTab('ask');
+
+		await page.getByLabelText('Timeout (seconds)').fill('9999');
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect.poll(() => api.updateSettings).toHaveBeenCalled();
+		const sent = api.updateSettings.mock.calls.at(-1)?.[0] as BrainConfigDoc;
+		expect(sent.ask.timeout_seconds).toBe(600);
 	});
 });
 

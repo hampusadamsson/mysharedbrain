@@ -332,6 +332,10 @@ class AskConfig(BaseModel):
 
     max_steps: int | None = Field(default=None, ge=1, le=200)
 
+    timeout_seconds: int = Field(default=60, ge=5, le=600)
+    """Give up on one question after this long (the UI shows a spinner until
+    then). Bounded so a typo cannot disable the guard or hang a request."""
+
 
 class SchedulerConfig(BaseModel):
     """How often the scheduler wakes to look for due jobs."""

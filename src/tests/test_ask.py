@@ -8,10 +8,13 @@ gated by ``ask.enabled``.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -23,9 +26,24 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from mysharedbrain.ask import AskAnswer, evidence, run_ask
+from mysharedbrain.ask import (
+    AskAnswer,
+    AskTimeout,
+    evidence,
+    run_ask,
+    run_with_timeout,
+)
 from mysharedbrain.config import AskConfig, BrainConfig, BrainConfigDocument
 from mysharedbrain.service import Librarian
+
+
+async def _constant(value: str) -> str:
+    return value
+
+
+async def _slow() -> str:
+    await asyncio.sleep(5)
+    return "too late"
 
 
 def _lib(root: Path) -> Librarian:
@@ -73,6 +91,51 @@ def test_ask_can_be_disabled_from_the_environment(
 ) -> None:
     monkeypatch.setenv("BRAIN__ASK__ENABLED", "false")
     assert BrainConfig().ask.enabled is False
+
+
+def test_ask_has_a_default_timeout_of_one_minute() -> None:
+    assert AskConfig().timeout_seconds == 60
+    assert _cfg().ask.timeout_seconds == 60
+
+
+def test_ask_timeout_is_configurable_and_bounded() -> None:
+    assert _cfg(timeout_seconds=120).ask.timeout_seconds == 120
+    for bad in (0, 4, 601):
+        with pytest.raises(ValidationError):
+            AskConfig(timeout_seconds=bad)
+
+
+async def test_run_with_timeout_returns_the_value_when_fast_enough() -> None:
+    assert await run_with_timeout(1, _constant("ok"), what="the test") == "ok"
+
+
+async def test_run_with_timeout_raises_ask_timeout() -> None:
+    with pytest.raises(AskTimeout) as exc:
+        await run_with_timeout(0.01, _slow(), what="the librarian")
+    assert "the librarian" in str(exc.value)
+    assert "0.01" in str(exc.value)
+
+
+async def test_run_ask_applies_the_configured_timeout(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    async def spy(seconds: float, awaitable: object, *, what: str) -> object:
+        seen["seconds"] = seconds
+        seen["what"] = what
+        # Stand in for the run so no model or credential is needed; closing the
+        # coroutine keeps the guard from warning about it never being awaited.
+        close = getattr(awaitable, "close", None)
+        if callable(close):
+            close()
+        return SimpleNamespace(messages=[], output="answered")
+
+    monkeypatch.setattr("mysharedbrain.ask.run_with_timeout", spy)
+    answer = await run_ask(_cfg(timeout_seconds=90), _lib(vault_dir), "what is k3s?")
+    assert seen["seconds"] == 90
+    assert seen["what"] == "the librarian"
+    assert answer.message == "answered"
 
 
 def test_ask_rejects_an_unknown_mcp_server() -> None:

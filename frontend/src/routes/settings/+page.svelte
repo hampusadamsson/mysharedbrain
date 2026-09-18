@@ -330,6 +330,14 @@
 		draft.ask.max_steps = value === '' || !Number.isInteger(n) || n < 1 ? null : n;
 	}
 
+	/** Clamped to the config's own bounds so the input cannot go out of range. */
+	function setAskTimeout(value: string) {
+		if (!draft) return;
+		const n = Number(value);
+		if (!Number.isInteger(n)) return;
+		draft.ask.timeout_seconds = Math.min(600, Math.max(5, n));
+	}
+
 	// Config tab: extract the effective config as YAML, or replace it wholesale
 	// by pasting/uploading YAML in the same shape.
 	let exportedYaml = $state('');
@@ -1019,6 +1027,22 @@
 							/>
 							<p class="text-xs text-muted-foreground">
 								Empty means the agent default. One question rarely needs many steps.
+							</p>
+						</div>
+						<div class="grid gap-2">
+							<Label for="ask-timeout">Timeout (seconds)</Label>
+							<Input
+								id="ask-timeout"
+								type="number"
+								step="5"
+								min="5"
+								max="600"
+								value={draft.ask.timeout_seconds}
+								oninput={(e) => setAskTimeout(e.currentTarget.value)}
+							/>
+							<p class="text-xs text-muted-foreground">
+								How long one question may take before the run is given up on and the Ask page
+								reports a timeout (5–600). The Ask page spins for at most this long.
 							</p>
 						</div>
 					</Card.Content>

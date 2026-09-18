@@ -12,7 +12,8 @@ silent: it lands in the capture queue for review, exactly like a job's misses.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -40,6 +41,25 @@ _NOTE_ARG_TOOLS = frozenset(
         "move_note",
     }
 )
+
+
+class AskTimeout(RuntimeError):
+    """The run did not finish inside ``ask.timeout_seconds``."""
+
+
+async def run_with_timeout[T](
+    seconds: float, awaitable: Awaitable[T], *, what: str
+) -> T:
+    """Await ``awaitable`` but give up after ``seconds``.
+
+    Kept separate from the run so the cap is exercised by a test that does not
+    have to sit through a real model call.
+    """
+    try:
+        async with asyncio.timeout(seconds):
+            return await awaitable
+    except TimeoutError as exc:
+        raise AskTimeout(f"{what} did not finish within {seconds:g}s") from exc
 
 
 @dataclass(frozen=True)
@@ -119,7 +139,11 @@ async def run_ask(
         raise ValueError("question must not be empty")
     if not cfg.ask.enabled:
         raise ValueError("ask the librarian is disabled in the config")
-    outcome = await run_agent(cfg, lib, ask_prompt(cfg, lib, clean), cfg.ask, model)
+    outcome = await run_with_timeout(
+        cfg.ask.timeout_seconds,
+        run_agent(cfg, lib, ask_prompt(cfg, lib, clean), cfg.ask, model),
+        what="the librarian",
+    )
     parts: list[ModelRequestPart | ModelResponsePart] = [
         part for message in outcome.messages for part in message.parts
     ]
@@ -134,4 +158,11 @@ async def run_ask(
     )
 
 
-__all__ = ["AskAnswer", "ask_prompt", "evidence", "run_ask"]
+__all__ = [
+    "AskAnswer",
+    "AskTimeout",
+    "ask_prompt",
+    "evidence",
+    "run_ask",
+    "run_with_timeout",
+]
