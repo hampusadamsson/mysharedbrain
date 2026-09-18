@@ -110,6 +110,8 @@ def test_agent_writes_are_tagged_with_the_librarian(
 def test_run_outcome_is_audited_with_job_id(
     vault_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """No name set: the audit trail falls back to the job id."""
+
     async def fake(
         cfg: object, lib: object, prompt: str, job: object = None
     ) -> AgentOutcome:
@@ -121,6 +123,40 @@ def test_run_outcome_is_audited_with_job_id(
     entry = AuditLog(vault_dir).read_log()[0]
     assert (entry.action, entry.actor) == ("job-ok", LIBRARIAN_ACTOR)
     assert entry.detail == "job:sweep — 1 request(s), 0 tool call(s)"
+
+
+def test_run_outcome_is_audited_with_the_job_name_not_its_id(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The settings page identifies a job by its Name; the audit trail should
+    read the same way, not by the internal id."""
+
+    async def fake(
+        cfg: object, lib: object, prompt: str, job: object = None
+    ) -> AgentOutcome:
+        return AgentOutcome(output="all good", requests=1, tool_calls=0)
+
+    monkeypatch.setattr("mysharedbrain.jobs.run_agent", fake)
+    scheduler = _scheduler(vault_dir, name="Nightly vault sweep")
+    asyncio_run(scheduler.run_job("sweep"))
+
+    entry = AuditLog(vault_dir).read_log()[0]
+    assert entry.detail == "job:Nightly vault sweep — 1 request(s), 0 tool call(s)"
+
+
+def test_skipped_and_error_audits_also_use_the_job_name(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def boom(*args: object, **kwargs: object) -> AgentOutcome:
+        raise RuntimeError("model unreachable")
+
+    monkeypatch.setattr("mysharedbrain.jobs.run_agent", boom)
+    scheduler = _scheduler(vault_dir, name="Nightly vault sweep")
+    asyncio_run(scheduler.run_job("sweep"))
+
+    entry = AuditLog(vault_dir).read_log()[0]
+    assert entry.action == "job-error"
+    assert entry.detail.startswith("job:Nightly vault sweep — ")
 
 
 def test_failed_run_is_audited(

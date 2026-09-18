@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
-	import { LAYOUT_DOC, STARTER_DOCS } from '$lib/admin-seed';
 	import type {
 		BrainConfigDoc,
 		CheckResult,
@@ -20,6 +19,9 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+	import ConfirmDelete from '$lib/components/ConfirmDelete.svelte';
+	import NotePickerDialog from '$lib/components/NotePickerDialog.svelte';
+	import { cn } from '$lib/utils';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -42,7 +44,7 @@
 	// Model providers the server can reach, and which one is in effect.
 	let providers = $state<ProviderInfo[]>([]);
 
-	const TABS = ['agent', 'jobs', 'tools', 'mcp', 'templates'] as const;
+	const TABS = ['agent', 'jobs', 'tools', 'mcp', 'config'] as const;
 	type Tab = (typeof TABS)[number];
 
 	const SOURCES: Record<string, string> = {
@@ -234,126 +236,82 @@
 		if (draft) draft.scheduler.run_on_start = !draft.scheduler.run_on_start;
 	}
 
-	/** Page-type slug → template note rows for the Templates tab. */
-	function templateRows(): [string, string][] {
-		return Object.entries(draft?.admin.templates ?? {});
+	function setTemperature(value: string) {
+		if (draft) draft.agent.temperature = value === '' ? null : Number(value);
 	}
 
-	function setTemplate(key: string, value: string, previous?: string) {
-		if (!draft) return;
-		const templates = { ...draft.admin.templates };
-		if (previous !== undefined && previous !== key) delete templates[previous];
-		templates[key] = value;
-		draft.admin.templates = templates;
-	}
-
-	function removeTemplate(key: string) {
-		if (!draft) return;
-		const templates = { ...draft.admin.templates };
-		delete templates[key];
-		draft.admin.templates = templates;
-	}
-
-	function addTemplate() {
-		if (!draft) return;
-		let n = Object.keys(draft.admin.templates).length + 1;
-		while (`type-${n}` in draft.admin.templates) n += 1;
-		setTemplate(`type-${n}`, '');
-	}
-
-	/** Prompt name → prompt note rows for the Templates tab. */
-	function promptRows(): [string, string][] {
-		return Object.entries(draft?.admin.prompts ?? {});
-	}
-
-	function setPrompt(key: string, value: string, previous?: string) {
-		if (!draft) return;
-		const prompts = { ...draft.admin.prompts };
-		if (previous !== undefined && previous !== key) delete prompts[previous];
-		prompts[key] = value;
-		draft.admin.prompts = prompts;
-	}
-
-	function removePrompt(key: string) {
-		if (!draft) return;
-		const prompts = { ...draft.admin.prompts };
-		delete prompts[key];
-		draft.admin.prompts = prompts;
-	}
-
-	function addPrompt() {
-		if (!draft) return;
-		let n = Object.keys(draft.admin.prompts).length + 1;
-		while (`prompt-${n}` in draft.admin.prompts) n += 1;
-		setPrompt(`prompt-${n}`, '');
-	}
-
-	// Notes under the admin dir, for the Templates tab library list.
-	let library = $state<string[]>([]);
-	let libraryLoading = $state(false);
-	let libraryTabSeen = $state(false);
-	let seeding = $state(false);
+	// Config tab: extract the effective config as YAML, or replace it wholesale
+	// by pasting/uploading YAML in the same shape.
+	let exportedYaml = $state('');
+	let exportLoading = $state(false);
+	let exportTabSeen = $state(false);
+	let importText = $state('');
+	let importing = $state(false);
+	let fileInput = $state<HTMLInputElement | undefined>(undefined);
 
 	$effect(() => {
-		// Lazily, once: the tab mounts with the page, so gate on first open.
-		if (tab === 'templates' && draft && !libraryTabSeen) {
-			libraryTabSeen = true;
-			void loadLibrary();
+		if (tab === 'config' && !exportTabSeen) {
+			exportTabSeen = true;
+			void loadExport();
 		}
 	});
 
-	async function loadLibrary() {
-		if (!draft) return;
-		libraryLoading = true;
+	async function loadExport() {
+		exportLoading = true;
 		try {
-			library = (await api.listNotes(draft.admin.dir || 'admin', 500)).notes;
+			exportedYaml = await api.exportSettings();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : String(e));
 		} finally {
-			libraryLoading = false;
+			exportLoading = false;
 		}
 	}
 
-	/** Create the starter admin docs that are missing, and wire their mappings. */
-	async function seedAdmin() {
-		if (!draft || seeding) return;
-		seeding = true;
+	async function copyExport() {
 		try {
-			const dir = draft.admin.dir || 'admin';
-			const existing = new Set((await api.listNotes(dir, 500)).notes);
-			let created = 0;
-			for (const doc of STARTER_DOCS) {
-				const id = `${dir}/${doc.path}`;
-				if (existing.has(id)) continue;
-				await api.createNote(id, doc.content);
-				created += 1;
-			}
-			const templates = { ...draft.admin.templates };
-			const prompts = { ...draft.admin.prompts };
-			for (const doc of STARTER_DOCS) {
-				if (doc.template && !(doc.template in templates))
-					templates[doc.template] = `${dir}/${doc.path}`;
-				if (doc.prompt && !(doc.prompt in prompts)) prompts[doc.prompt] = `${dir}/${doc.path}`;
-			}
-			draft.admin.templates = templates;
-			draft.admin.prompts = prompts;
-			if (!draft.admin.layout_template || draft.admin.layout_template === 'admin/templates/layout')
-				draft.admin.layout_template = `${dir}/${LAYOUT_DOC}`;
-			await loadLibrary();
-			toast.success(
-				created > 0
-					? `Seeded ${created} admin doc${created === 1 ? '' : 's'}`
-					: 'Admin docs already present'
-			);
+			await navigator.clipboard.writeText(exportedYaml);
+			toast.success('Copied');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e));
+		}
+	}
+
+	function downloadExport() {
+		const blob = new Blob([exportedYaml], { type: 'text/yaml' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'brain.yaml';
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function onUploadFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		importText = await file.text();
+		input.value = '';
+	}
+
+	/** Replace the whole config from pasted/uploaded YAML — same validation and
+	 * masked-token handling as a regular save. */
+	async function applyImport() {
+		if (!importText.trim() || importing) return;
+		importing = true;
+		try {
+			const saved = await api.importSettings(importText);
+			settings = saved;
+			draft = clone(saved.config);
+			dirty = false;
+			importText = '';
+			toast.success('Imported');
+			void loadExport();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : String(e));
 		} finally {
-			seeding = false;
+			importing = false;
 		}
-	}
-
-	function setTemperature(value: string) {
-		if (draft) draft.agent.temperature = value === '' ? null : Number(value);
 	}
 
 	const schedulerEnabled = () => draft?.scheduler.enabled ?? false;
@@ -386,6 +344,18 @@
 	function removeJob(index: number) {
 		if (!draft) return;
 		draft.jobs = draft.jobs.filter((_, i) => i !== index);
+	}
+
+	let instructionPickerOpen = $state(false);
+	let instructionPickerJob = $state<JobSpec | null>(null);
+
+	function openInstructionPicker(job: JobSpec) {
+		instructionPickerJob = job;
+		instructionPickerOpen = true;
+	}
+
+	function chooseInstructionNote(id: string) {
+		if (instructionPickerJob) instructionPickerJob.instructions_file = id;
 	}
 
 	function toggleTool(name: string, enabled: boolean) {
@@ -592,7 +562,7 @@
 				<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>
 				<Tabs.Trigger value="tools">Tools</Tabs.Trigger>
 				<Tabs.Trigger value="mcp">MCP servers</Tabs.Trigger>
-				<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
+				<Tabs.Trigger value="config">Config</Tabs.Trigger>
 			</Tabs.List>
 		</div>
 
@@ -707,7 +677,7 @@
 									spellcheck="false"
 									oninput={(e) => setOption(key, e.currentTarget.value)}
 								/>
-								<Button size="sm" variant="ghost" onclick={() => removeOption(key)}>Remove</Button>
+								<ConfirmDelete label={`the “${key}” option`} onconfirm={() => removeOption(key)} />
 							</div>
 						{/each}
 					</div>
@@ -850,7 +820,11 @@
 								{running === job.id ? 'Running…' : 'Run now'}
 							</Button>
 							<Button size="sm" variant="ghost" onclick={() => openRuns(job.id)}>History</Button>
-							<Button size="sm" variant="ghost" onclick={() => removeJob(index)}>Remove</Button>
+							<ConfirmDelete
+								label={`the “${job.name || job.id}” job`}
+								description="Its schedule, prompt and history stop being tracked here. This cannot be undone."
+								onconfirm={() => removeJob(index)}
+							/>
 						</div>
 					</Card.Header>
 					<Card.Content class="grid gap-4 sm:grid-cols-2">
@@ -887,15 +861,23 @@
 						</div>
 						<div class="grid gap-2">
 							<Label>Instructions note</Label>
-							<Input
-								value={job.instructions_file ?? ''}
-								oninput={(e) => {
-									const v = (e.currentTarget as HTMLInputElement).value;
-									job.instructions_file = v === '' ? null : v;
-								}}
-								placeholder="jobs/daily.md"
-								spellcheck="false"
-							/>
+							<div class="flex gap-2">
+								<Input
+									value={job.instructions_file ?? ''}
+									readonly
+									aria-label={`Instructions note for ${job.name || job.id}`}
+									placeholder="none chosen"
+									onclick={() => openInstructionPicker(job)}
+								/>
+								<Button size="sm" variant="outline" onclick={() => openInstructionPicker(job)}>
+									Choose…
+								</Button>
+								{#if job.instructions_file}
+									<Button size="sm" variant="ghost" onclick={() => (job.instructions_file = null)}>
+										Clear
+									</Button>
+								{/if}
+							</div>
 						</div>
 						<div class="grid gap-2 sm:col-span-2">
 							<Label>Instructions</Label>
@@ -911,23 +893,34 @@
 									</Button>
 								{/if}
 							</div>
-							<div class="flex flex-wrap gap-1.5">
+							<ul class="divide-y rounded-lg border">
 								{#each settings.tools as tool (tool.name)}
 									{@const on = jobToolOn(job, tool)}
-									<Button
-										size="sm"
-										variant={on ? 'default' : 'outline'}
-										aria-pressed={on}
-										disabled={jobToolLocked(job, tool)}
-										title={jobToolLocked(job, tool)
-											? `${tool.name} is switched off in the Tools tab`
-											: tool.description}
-										onclick={() => toggleJobTool(job, tool)}
-									>
-										{tool.name}
-									</Button>
+									{@const locked = jobToolLocked(job, tool)}
+									<li>
+										<label
+											class={cn(
+												'flex items-center gap-3 px-4 py-3',
+												locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+											)}
+											title={locked
+												? `${tool.name} is switched off in the Tools tab`
+												: tool.description}
+										>
+											<Checkbox
+												checked={on}
+												disabled={locked}
+												aria-label={tool.name}
+												onCheckedChange={() => toggleJobTool(job, tool)}
+											/>
+											<div class="min-w-0 flex-1">
+												<code class="text-sm font-medium">{tool.name}</code>
+												<p class="text-xs text-muted-foreground">{tool.description}</p>
+											</div>
+										</label>
+									</li>
 								{/each}
-							</div>
+							</ul>
 						</div>
 						<div class="grid gap-2 sm:col-span-2">
 							<div class="flex flex-wrap items-baseline gap-2">
@@ -1038,9 +1031,11 @@
 								>
 									{server.enabled ? 'Disable' : 'Enable'}
 								</Button>
-								<Button size="sm" variant="ghost" onclick={() => removeServer(index)}>
-									Remove
-								</Button>
+								<ConfirmDelete
+									label={`the “${server.name || 'server'}” MCP server`}
+									description="Any job restricted to it loses that tool access. This cannot be undone."
+									onconfirm={() => removeServer(index)}
+								/>
 							</div>
 						</Card.Action>
 					</Card.Header>
@@ -1095,153 +1090,77 @@
 			{/each}
 		</Tabs.Content>
 
-		<Tabs.Content value="templates" class="mt-4 space-y-4">
+		<Tabs.Content value="config" class="mt-4 space-y-4">
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>Vault administration</Card.Title>
+					<Card.Title>Extract config</Card.Title>
 					<Card.Description>
-						Markdown in the vault the librarian manages the vault by — page templates, reusable
-						prompts, and the wiki layout. Edit the content as regular pages.
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="grid gap-4 sm:grid-cols-2">
-					<div class="grid gap-2">
-						<Label for="admindir">Admin directory</Label>
-						<Input
-							id="admindir"
-							bind:value={draft.admin.dir}
-							placeholder="admin"
-							spellcheck="false"
-						/>
-						<p class="text-xs text-muted-foreground">Section holding templates and prompts.</p>
-					</div>
-					<div class="grid gap-2">
-						<Label for="layouttpl">Layout template</Label>
-						<Input
-							id="layouttpl"
-							bind:value={draft.admin.layout_template}
-							placeholder="admin/templates/layout"
-							spellcheck="false"
-						/>
-						{#if draft.admin.layout_template}
-							<a
-								href={`/p/${draft.admin.layout_template}`}
-								class="text-xs text-blue-600 hover:underline"
-							>
-								Open page
-							</a>
-						{/if}
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Page templates</Card.Title>
-					<Card.Description>
-						Page type slug → template note. New pages of a known type start from their template.
+						The effective config — defaults, seed file and saved settings merged — as YAML, token
+						masked. Pasting this back on the Import card below (or as the seed file on another
+						install) reproduces this config field for field.
 					</Card.Description>
 					<Card.Action>
-						<Button size="sm" variant="outline" onclick={addTemplate}>Add template</Button>
-					</Card.Action>
-				</Card.Header>
-				<Card.Content class="space-y-2">
-					{#each templateRows() as [key, value] (key)}
-						<div class="flex gap-2">
-							<Input
-								value={key}
-								placeholder="meeting"
-								aria-label="Template type"
-								spellcheck="false"
-								oninput={(e) => setTemplate(e.currentTarget.value, value, key)}
-							/>
-							<Input
-								{value}
-								placeholder="admin/templates/meeting"
-								aria-label="Template note"
-								spellcheck="false"
-								oninput={(e) => setTemplate(key, e.currentTarget.value)}
-							/>
-							<Button size="sm" variant="ghost" onclick={() => removeTemplate(key)}>Remove</Button>
-						</div>
-					{/each}
-					{#if templateRows().length === 0}
-						<p class="text-sm text-muted-foreground">No page templates mapped yet.</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>Prompts</Card.Title>
-					<Card.Description>
-						Prompt name → prompt note. The librarian reads the note before a run.
-					</Card.Description>
-					<Card.Action>
-						<Button size="sm" variant="outline" onclick={addPrompt}>Add prompt</Button>
-					</Card.Action>
-				</Card.Header>
-				<Card.Content class="space-y-2">
-					{#each promptRows() as [key, value] (key)}
-						<div class="flex gap-2">
-							<Input
-								value={key}
-								placeholder="triage"
-								aria-label="Prompt name"
-								spellcheck="false"
-								oninput={(e) => setPrompt(e.currentTarget.value, value, key)}
-							/>
-							<Input
-								{value}
-								placeholder="admin/prompts/triage"
-								aria-label="Prompt note"
-								spellcheck="false"
-								oninput={(e) => setPrompt(key, e.currentTarget.value)}
-							/>
-							<Button size="sm" variant="ghost" onclick={() => removePrompt(key)}>Remove</Button>
-						</div>
-					{/each}
-					{#if promptRows().length === 0}
-						<p class="text-sm text-muted-foreground">No prompts mapped yet.</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>In the vault</Card.Title>
-					<Card.Description>Notes under {draft.admin.dir || 'admin'}.</Card.Description>
-					<Card.Action>
-						<div class="flex gap-2">
-							<Button size="sm" variant="ghost" onclick={loadLibrary}>Refresh</Button>
-							<Button size="sm" variant="outline" disabled={seeding} onclick={seedAdmin}>
-								{seeding ? 'Seeding…' : 'Seed starter set'}
+						<div class="flex flex-wrap gap-2">
+							<Button size="sm" variant="outline" onclick={loadExport} disabled={exportLoading}>
+								Refresh
+							</Button>
+							<Button size="sm" variant="outline" onclick={copyExport} disabled={!exportedYaml}>
+								Copy
+							</Button>
+							<Button size="sm" variant="outline" onclick={downloadExport} disabled={!exportedYaml}>
+								Download
 							</Button>
 						</div>
 					</Card.Action>
 				</Card.Header>
 				<Card.Content>
-					{#if libraryLoading}
+					{#if exportLoading && !exportedYaml}
 						<p class="text-sm text-muted-foreground">Loading…</p>
-					{:else if library.length === 0}
-						<p class="text-sm text-muted-foreground">
-							Nothing here yet — seed the starter set or create pages under {draft.admin.dir ||
-								'admin'}.
-						</p>
-					{:else}
-						<ul class="divide-y rounded-lg border">
-							{#each library as id (id)}
-								<li>
-									<a
-										href={`/p/${id}`}
-										class="block px-4 py-2 text-sm font-medium text-blue-600 hover:bg-muted"
-									>
-										{id}
-									</a>
-								</li>
-							{/each}
-						</ul>
 					{/if}
+					<Textarea
+						readonly
+						bind:value={exportedYaml}
+						aria-label="Exported config"
+						class={exportLoading && !exportedYaml ? 'hidden' : 'min-h-64 font-mono text-xs'}
+						spellcheck="false"
+					></Textarea>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Load / upload config</Card.Title>
+					<Card.Description>
+						Paste YAML in the same shape as the extract above, or upload a file, then apply it. This
+						replaces the whole saved config — same validation as Save, and a masked token in the
+						pasted YAML keeps the stored one.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="space-y-3">
+					<Textarea
+						bind:value={importText}
+						aria-label="Config to import"
+						placeholder="agent:
+  model: openai:gpt-4o
+..."
+						class="min-h-64 font-mono text-xs"
+						spellcheck="false"
+					></Textarea>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button size="sm" variant="outline" onclick={() => fileInput?.click()}>
+							Upload file
+						</Button>
+						<input
+							bind:this={fileInput}
+							type="file"
+							accept=".yaml,.yml,text/yaml"
+							class="hidden"
+							onchange={onUploadFile}
+						/>
+						<Button size="sm" onclick={applyImport} disabled={!importText.trim() || importing}>
+							{importing ? 'Applying…' : 'Apply'}
+						</Button>
+					</div>
 				</Card.Content>
 			</Card.Root>
 		</Tabs.Content>
@@ -1275,3 +1194,10 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<NotePickerDialog
+	bind:open={instructionPickerOpen}
+	value={instructionPickerJob?.instructions_file ?? null}
+	title="Choose an instructions note"
+	onselect={chooseInstructionNote}
+/>

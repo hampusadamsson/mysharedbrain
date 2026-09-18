@@ -72,6 +72,11 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 
 ## MCP tools
 
+MCP is the vault interaction surface for end users — notes, search, feedback,
+questions. Deployment config (settings, model/MCP/job checks and runs) and
+capture-queue moderation stay behind the Settings UI and the librarian's own
+in-process tools; they're not exposed to MCP clients.
+
 | Tool | Description |
 | ---- | ----------- |
 | `create_note` | Create note |
@@ -91,17 +96,14 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 | `get_backlinks` / `get_outgoing` | `[[Link]]` graph neighbors |
 | `recent_changes` | Latest audited changes, newest first (kind filter, limit/offset) |
 | `note_history` | Every interaction with one note + per-kind counts |
-| `list_capture` | List queue entries (status filter, limit/offset) |
 | `give_feedback` | Queue an edit · flag missing info · file a request or question |
-| `review_capture` | Review queue entry: applied/approved/rejected |
-| `set_capture_status` | Override a queue entry's state (any state) |
 | `ask_question` | Ask the librarian; a miss files an automated question |
-| `test_mcp_server` | Check an MCP server connects, and list its tools |
-| `test_model` | Check the configured model answers, and how fast |
-| `get_settings` | Read the brain config (token masked) |
-| `update_settings` | Replace the brain config |
-| `run_job` | Run a scheduled job immediately |
-| `list_job_runs` | Recent runs of a scheduled job |
+
+Capture-queue moderation (`list_capture`, `review_capture`,
+`set_capture_status`) and deployment config (`get_settings`,
+`update_settings`, `list_model_providers`, `test_model`, `test_mcp_server`,
+`run_job`, `list_job_runs`) are not MCP tools — the librarian's own agent
+still reaches the capture queue directly, and the Settings UI covers config.
 
 ## Configuration
 
@@ -126,6 +128,16 @@ Precedence, lowest to highest: **defaults → seed file → database → environ
 
 The page shows which layer is live. To hand control back to the seed file, delete
 the stored row: `sqlite3 "$VAULT_DIR/.brain/brain.db" "DELETE FROM settings"`.
+
+A save replaces the whole document — there is no per-field merge between what
+you saved and what is still only in the file, so once you save, the seed file
+stops mattering until that row is deleted. `GET /api/settings/export` (also
+`export_config_yaml()` in Python) returns the effective config — defaults, file
+and saved settings all merged — as YAML, with the API key masked: writing that
+back out as `brain.yaml` reproduces the same config field for field, so it is
+the supported way to turn a saved UI config back into a file you can commit or
+hand to another install. An environment override still wins over the re-seeded
+file, same as it wins over the database today.
 
 ### Any provider, any endpoint
 
@@ -307,9 +319,10 @@ The `admin/` section holds markdown the librarian manages the vault by:
 prompts, and `admin/templates/layout` for the wiki layout new pages follow.
 The standing instructions always name these docs (see `admin_instructions`),
 so every run reads its template before creating a page and its prompt before
-a job. The Templates tab in settings edits the mappings (`admin.dir`,
-`layout_template`, per-type `templates`, named `prompts`), lists what is in
-the vault, and seeds a starter set through the regular notes API.
+a job. The mappings (`admin.dir`, `layout_template`, per-type `templates`,
+named `prompts`) are config, not a settings-page tab — set them in the YAML
+file or via `PUT /api/settings` and edit the docs themselves as regular vault
+pages.
 
 ```yaml
 admin:

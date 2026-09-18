@@ -369,6 +369,14 @@ export const api = {
 	/** Model providers this install can reach, and what each needs. */
 	modelProviders: () => get<Providers>('/api/settings/providers'),
 	updateSettings: (config: BrainConfigDoc) => put<Settings>('/api/settings', { config }),
+	/** The effective config (defaults+file+saved settings), as YAML, token masked. */
+	exportSettings: async () => {
+		const res = await fetch('/api/settings/export');
+		if (!res.ok) throw new ApiError(res.status, res.statusText);
+		return res.text();
+	},
+	/** Replace the whole config from pasted/uploaded YAML — same shape as export. */
+	importSettings: (text: string) => put<Settings>('/api/settings/import', { yaml: text }),
 	runJob: (job_id: string) =>
 		post<JobRun>(`/api/settings/jobs/${encodeURIComponent(job_id)}/run`, {}),
 	jobRuns: (job_id: string, limit = 20) =>

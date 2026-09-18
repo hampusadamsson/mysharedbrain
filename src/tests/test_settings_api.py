@@ -161,6 +161,96 @@ def test_put_settings_round_trips_the_admin_section(
     assert saved["config"]["admin"]["templates"] == {"meeting": "meta/tpl/meeting"}
 
 
+def test_export_endpoint_returns_yaml_that_reseeds_to_the_same_config(
+    vault_dir: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    c = client()
+    config = c.get(CONFIG_PATH).json()["config"]
+    config["agent"]["model"] = "openai:gpt-4o"
+    c.put(CONFIG_PATH, json={"config": config})
+
+    resp = c.get("/api/settings/export")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/plain")
+    exported = yaml.safe_load(resp.text)
+    assert exported["agent"]["model"] == "openai:gpt-4o"
+    # redacted for the download-and-share path
+    assert "sk-secret" not in resp.text
+
+    reseeded = config_file.parent / "exported.yaml"
+    reseeded.write_text(resp.text, encoding="utf-8")
+    monkeypatch.setenv("BRAIN_CONFIG", str(reseeded))
+    from mysharedbrain.service import vault_root
+    from mysharedbrain.settings_store import SettingsStore
+
+    SettingsStore(vault_root()).clear()  # drop the DB layer, seed file only now
+    reseeded_config = client().get(CONFIG_PATH).json()["config"]
+    assert reseeded_config["agent"]["model"] == "openai:gpt-4o"
+
+
+def test_import_settings_accepts_pasted_yaml(
+    vault_dir: Path, config_file: Path
+) -> None:
+    c = client()
+    resp = c.put(
+        "/api/settings/import",
+        json={
+            "yaml": yaml.safe_dump(
+                {"agent": {"model": "openai:gpt-4o"}, "admin": {"dir": "meta"}}
+            )
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["config"]["agent"]["model"] == "openai:gpt-4o"
+    assert body["config"]["admin"]["dir"] == "meta"
+    # actually saved, not just echoed back
+    assert c.get(CONFIG_PATH).json()["config"]["admin"]["dir"] == "meta"
+
+
+def test_import_settings_rejects_bad_yaml(vault_dir: Path, config_file: Path) -> None:
+    c = client()
+    resp = c.put("/api/settings/import", json={"yaml": "agent: [oops"})
+    assert resp.status_code == 400
+    assert "invalid yaml" in resp.json()["detail"]
+
+
+def test_import_settings_rejects_a_non_mapping_document(
+    vault_dir: Path, config_file: Path
+) -> None:
+    c = client()
+    resp = c.put("/api/settings/import", json={"yaml": "- just\n- a\n- list"})
+    assert resp.status_code == 400
+
+
+def test_import_settings_rejects_invalid_config(
+    vault_dir: Path, config_file: Path
+) -> None:
+    c = client()
+    resp = c.put("/api/settings/import", json={"yaml": "agent: {model: 1}"})
+    assert resp.status_code == 400
+
+
+def test_export_then_import_round_trips_through_another_install(
+    vault_dir: Path, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point: extract config, paste it elsewhere, same effective
+    config (masked token aside — that always needs re-entry after a real
+    export, by design)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    c = client()
+    config = c.get(CONFIG_PATH).json()["config"]
+    config["agent"]["model"] = "openai:gpt-4o"
+    config["admin"]["dir"] = "meta"
+    c.put(CONFIG_PATH, json={"config": config})
+    exported = c.get("/api/settings/export").text
+
+    imported = c.put("/api/settings/import", json={"yaml": exported}).json()
+    assert imported["config"]["agent"]["model"] == "openai:gpt-4o"
+    assert imported["config"]["admin"]["dir"] == "meta"
+
+
 def test_put_settings_round_trips_mcp_insecure_flag(
     vault_dir: Path, config_file: Path
 ) -> None:

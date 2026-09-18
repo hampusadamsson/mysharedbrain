@@ -11,7 +11,10 @@ const api = vi.hoisted(() => ({
 	testModel: vi.fn(),
 	modelProviders: vi.fn(),
 	listNotes: vi.fn(),
-	createNote: vi.fn()
+	createNote: vi.fn(),
+	search: vi.fn(),
+	exportSettings: vi.fn(),
+	importSettings: vi.fn()
 }));
 
 /** The catalog the server reports: what this install can import. */
@@ -360,6 +363,7 @@ describe('settings · job mcp servers', () => {
 		await openTab('mcp');
 
 		await page.getByRole('button', { name: 'Remove' }).nth(1).click();
+		await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click();
 		await page.getByRole('tab', { name: 'Jobs' }).click();
 
 		// the reference is gone, so saving cannot fail validation
@@ -519,6 +523,7 @@ describe('settings · model provider', () => {
 		await expect.element(page.getByLabelText('Option value')).toHaveValue('eu-west-1');
 		// and removing it takes the row away
 		await page.getByRole('button', { name: 'Remove' }).click();
+		await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click();
 		expect(page.getByLabelText('Option name').elements()).toHaveLength(0);
 	});
 
@@ -584,8 +589,7 @@ describe('settings · tab in the url', () => {
 		['agent', 'Agent'],
 		['jobs', 'Jobs'],
 		['tools', 'Tools'],
-		['mcp', 'MCP servers'],
-		['templates', 'Templates']
+		['mcp', 'MCP servers']
 	])('stays on %s after a refresh', async (name, label) => {
 		await openTab(name);
 
@@ -734,38 +738,34 @@ describe('settings · jobs', () => {
 describe('settings · job tools', () => {
 	async function firstJobCard() {
 		await openJobs();
-		// the buttons live in the first job card
-		return page.getByRole('button', { name: 'read_note' }).first();
+		// the checkboxes live in the first job card
+		return page.getByRole('checkbox', { name: 'read_note' }).first();
 	}
 
-	it('offers the tools as toggles instead of a free-text field', async () => {
+	it('offers the tools as checkboxes instead of a free-text field', async () => {
 		await firstJobCard();
 
 		expect(page.getByText(/Restrict tools/).elements()).toHaveLength(0);
-		await expect.element(page.getByRole('button', { name: 'patch_note' }).first()).toBeVisible();
+		await expect.element(page.getByRole('checkbox', { name: 'patch_note' }).first()).toBeVisible();
 	});
 
 	it('starts unrestricted: every enabled tool is on', async () => {
 		await firstJobCard();
 
 		await expect.element(page.getByText(/every enabled tool/).first()).toBeVisible();
-		await expect
-			.element(page.getByRole('button', { name: 'read_note' }).first())
-			.toHaveAttribute('aria-pressed', 'true');
-		await expect
-			.element(page.getByRole('button', { name: 'patch_note' }).first())
-			.toHaveAttribute('aria-pressed', 'true');
+		await expect.element(page.getByRole('checkbox', { name: 'read_note' }).first()).toBeChecked();
+		await expect.element(page.getByRole('checkbox', { name: 'patch_note' }).first()).toBeChecked();
 	});
 
 	it('turning one off narrows the job to an explicit list', async () => {
 		await firstJobCard();
 
-		await page.getByRole('button', { name: 'patch_note' }).first().click();
+		await page.getByRole('checkbox', { name: 'patch_note' }).first().click();
 
 		await expect.element(page.getByText('1 of 3 tools')).toBeVisible();
 		await expect
-			.element(page.getByRole('button', { name: 'patch_note' }).first())
-			.toHaveAttribute('aria-pressed', 'false');
+			.element(page.getByRole('checkbox', { name: 'patch_note' }).first())
+			.not.toBeChecked();
 	});
 
 	it('collapses back to unrestricted when every enabled tool is on again', async () => {
@@ -774,7 +774,7 @@ describe('settings · job tools', () => {
 		await openJobs();
 		await expect.element(page.getByText('1 of 3 tools')).toBeVisible();
 
-		await page.getByRole('button', { name: 'patch_note' }).click();
+		await page.getByRole('checkbox', { name: 'patch_note' }).click();
 
 		await expect.element(page.getByText(/every enabled tool/)).toBeVisible();
 	});
@@ -786,7 +786,7 @@ describe('settings · job tools', () => {
 
 		await expect.element(page.getByText('2 of 3 tools · 1 switched off')).toBeVisible();
 		// and it stays clickable, so the stale entry can be dropped
-		await expect.element(page.getByRole('button', { name: 'delete_note' })).toBeEnabled();
+		await expect.element(page.getByRole('checkbox', { name: 'delete_note' })).toBeEnabled();
 	});
 
 	it('lets a restricted job take every enabled tool again', async () => {
@@ -803,12 +803,59 @@ describe('settings · job tools', () => {
 	it('blocks a tool that is switched off in the Tools tab', async () => {
 		await firstJobCard();
 
-		const off = page.getByRole('button', { name: 'delete_note' }).first();
+		const off = page.getByRole('checkbox', { name: 'delete_note' }).first();
 		await expect.element(off).toBeDisabled();
-		await expect.element(off).toHaveAttribute('aria-pressed', 'false');
+		await expect.element(off).not.toBeChecked();
+	});
+});
+
+describe('settings · job instructions note', () => {
+	it('shows the current note read-only, not as free text', async () => {
+		const job = { ...SHIPPED_JOBS[0], instructions_file: 'jobs/sweep.md' };
+		api.getSettings.mockResolvedValue(payload([job]));
+		await openJobs();
+
+		const field = page.getByLabelText('Instructions note for Capture triage');
+		await expect.element(field).toHaveValue('jobs/sweep.md');
+		await expect.element(field).toHaveAttribute('readonly');
+	});
+
+	it('opens a searchable picker and applies the chosen note', async () => {
+		api.search.mockResolvedValue({ names: ['jobs/nightly.md'], content: [] });
+		await openJobs();
+
+		await page.getByRole('button', { name: 'Choose…' }).first().click();
+		await expect.element(page.getByLabelText('Search notes')).toBeVisible();
+		await page.getByLabelText('Search notes').fill('nightly');
+
+		await expect.poll(() => api.search).toHaveBeenCalledWith('nightly', 30, 0, false);
+		await page.getByRole('button', { name: 'jobs/nightly.md' }).click();
+
 		await expect
-			.element(off)
-			.toHaveAttribute('title', 'delete_note is switched off in the Tools tab');
+			.element(page.getByLabelText('Instructions note for Capture triage'))
+			.toHaveValue('jobs/nightly.md');
+	});
+
+	it('browses the vault when the search box is empty', async () => {
+		api.listNotes.mockResolvedValue({ notes: ['jobs/a.md', 'jobs/b.md'] });
+		await openJobs();
+
+		await page.getByRole('button', { name: 'Choose…' }).first().click();
+
+		await expect.poll(() => api.listNotes).toHaveBeenCalledWith('', 50, 0);
+		await expect.element(page.getByRole('button', { name: 'jobs/a.md' })).toBeVisible();
+	});
+
+	it('clears the note without opening the picker', async () => {
+		const job = { ...SHIPPED_JOBS[0], instructions_file: 'jobs/sweep.md' };
+		api.getSettings.mockResolvedValue(payload([job]));
+		await openJobs();
+
+		await page.getByRole('button', { name: 'Clear' }).first().click();
+
+		await expect
+			.element(page.getByLabelText('Instructions note for Capture triage'))
+			.toHaveValue('');
 	});
 });
 
@@ -838,97 +885,88 @@ describe('settings · tools tab', () => {
 	});
 });
 
-describe('settings · templates tab', () => {
-	async function openTemplates() {
-		await openTab('templates');
+describe('settings · config tab', () => {
+	async function openConfig() {
+		await openTab('config');
 	}
 
-	it('shows the admin section defaults and an empty library', async () => {
-		await openTemplates();
+	it('does not fetch the extract while on another tab', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o\n');
+		await openTab('agent');
+		expect(api.exportSettings).not.toHaveBeenCalled();
+	});
 
-		await expect.element(page.getByLabelText('Admin directory')).toHaveValue('admin');
+	it('loads the extract on first open', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o\n');
+
+		await openConfig();
+
+		await expect.poll(() => api.exportSettings).toHaveBeenCalledTimes(1);
 		await expect
-			.element(page.getByLabelText('Layout template'))
-			.toHaveValue('admin/templates/layout');
-		await expect.element(page.getByText(/Nothing here yet/)).toBeVisible();
-		await expect.element(page.getByText(/No page templates mapped yet/)).toBeVisible();
-		await expect.element(page.getByText(/No prompts mapped yet/)).toBeVisible();
-		await expect.poll(() => api.listNotes).toHaveBeenCalledWith('admin', 500);
+			.element(page.getByLabelText('Exported config'))
+			.toHaveValue('agent:\n  model: openai:gpt-4o\n');
 	});
 
-	it('editing the admin directory marks the form unsaved', async () => {
-		await openTemplates();
+	it('refresh re-fetches the extract', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o\n');
+		await openConfig();
+		await expect.poll(() => api.exportSettings).toHaveBeenCalledTimes(1);
 
-		await page.getByLabelText('Admin directory').fill('meta');
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o-mini\n');
+		await page.getByRole('button', { name: 'Refresh' }).click();
 
-		await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+		await expect.poll(() => api.exportSettings).toHaveBeenCalledTimes(2);
+		await expect
+			.element(page.getByLabelText('Exported config'))
+			.toHaveValue('agent:\n  model: openai:gpt-4o-mini\n');
 	});
 
-	it('adds a template mapping and saves it with the config', async () => {
-		api.updateSettings.mockImplementation(async (config: BrainConfigDoc) => ({
-			...(await payload()),
-			config
-		}));
-		await openTemplates();
+	it('applies pasted yaml through the import endpoint, then reloads the draft', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o-mini\n');
+		const updated = payload();
+		updated.config.agent.model = 'openai:gpt-4o';
+		api.importSettings.mockResolvedValue(updated);
+		await openConfig();
 
-		await page.getByRole('button', { name: 'Add template' }).click();
-		await page.getByLabelText('Template type').fill('meeting');
-		await page.getByLabelText('Template note').fill('admin/templates/meeting');
-		await page.getByRole('button', { name: 'Save' }).click();
+		await page.getByLabelText('Config to import').fill('agent:\n  model: openai:gpt-4o\n');
+		await page.getByRole('button', { name: 'Apply' }).click();
 
 		await expect
-			.poll(() => api.updateSettings)
-			.toHaveBeenCalledWith(
-				expect.objectContaining({
-					admin: expect.objectContaining({
-						templates: { meeting: 'admin/templates/meeting' }
-					})
-				})
-			);
+			.poll(() => api.importSettings)
+			.toHaveBeenCalledWith('agent:\n  model: openai:gpt-4o\n');
+		// the pasted text is cleared and the draft now reflects what was imported
+		await expect.element(page.getByLabelText('Config to import')).toHaveValue('');
 	});
 
-	it('seeds the starter docs and wires their mappings', async () => {
-		await openTemplates();
+	it('reloading the draft after import shows the new model on the Agent tab', async () => {
+		const updated = payload();
+		updated.config.agent.model = 'openai:gpt-4o';
+		api.getSettings.mockResolvedValue(updated);
 
-		await page.getByRole('button', { name: 'Seed starter set' }).click();
+		await openTab('agent');
 
-		await expect.poll(() => api.createNote).toHaveBeenCalledWith('admin/index', expect.any(String));
-		await expect
-			.poll(() => api.createNote)
-			.toHaveBeenCalledWith('admin/templates/layout', expect.any(String));
-		expect(api.createNote).toHaveBeenCalledTimes(7);
-		// mappings are wired into the draft, unsaved until Save
-		expect(api.updateSettings).not.toHaveBeenCalled();
-		await expect.element(page.getByLabelText('Template type').first()).toHaveValue('meeting');
+		await expect.element(page.getByLabelText('Model')).toHaveValue('openai:gpt-4o');
 	});
 
-	it('skips starter docs that already exist', async () => {
-		api.listNotes.mockResolvedValue({
-			notes: [
-				'admin/index',
-				'admin/templates/layout',
-				'admin/templates/meeting',
-				'admin/templates/project',
-				'admin/templates/person',
-				'admin/prompts/capture-triage',
-				'admin/prompts/vault-sweep'
-			]
-		});
-		await openTemplates();
+	it('surfaces a rejected import as an error, without touching the draft', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o-mini\n');
+		api.importSettings.mockRejectedValue(new Error('invalid yaml: mapping expected'));
+		await openConfig();
 
-		await page.getByRole('button', { name: 'Seed starter set' }).click();
+		await page.getByLabelText('Config to import').fill('not: [valid');
+		await page.getByRole('button', { name: 'Apply' }).click();
 
-		await expect.poll(() => api.listNotes).toHaveBeenCalled();
-		expect(api.createNote).not.toHaveBeenCalled();
+		await expect.poll(() => api.importSettings).toHaveBeenCalled();
+		// the pasted text stays so the user can fix it, rather than vanishing
+		await expect.element(page.getByLabelText('Config to import')).toHaveValue('not: [valid');
 	});
 
-	it('lists admin notes with links to their pages', async () => {
-		api.listNotes.mockResolvedValue({ notes: ['admin/index', 'admin/templates/layout'] });
-		await openTemplates();
+	it('disables Apply until there is something to import', async () => {
+		api.exportSettings.mockResolvedValue('');
+		await openConfig();
 
-		await expect.element(page.getByRole('link', { name: 'admin/index' })).toBeVisible();
-		await expect
-			.element(page.getByRole('link', { name: 'admin/index' }))
-			.toHaveAttribute('href', '/p/admin/index');
+		await expect.element(page.getByRole('button', { name: 'Apply' })).toBeDisabled();
+		await page.getByLabelText('Config to import').fill('agent: {}');
+		await expect.element(page.getByRole('button', { name: 'Apply' })).toBeEnabled();
 	});
 });

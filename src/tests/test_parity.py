@@ -36,18 +36,8 @@ TOOL_ROUTES: dict[str, set[tuple[str, str]]] = {
     "note_history": {("GET", ID + "/history")},
     "get_outgoing": {("GET", ID + "/outgoing")},
     "recent_changes": {("GET", "/api/audit")},
-    "list_capture": {("GET", "/api/capture")},
     "give_feedback": {("POST", "/api/feedback")},
-    "review_capture": {("POST", "/api/capture/{entry_id}/review")},
-    "set_capture_status": {("PUT", "/api/capture/{entry_id}/status")},
     "ask_question": {("POST", "/api/request")},
-    "get_settings": {("GET", "/api/settings")},
-    "update_settings": {("PUT", "/api/settings")},
-    "run_job": {("POST", "/api/settings/jobs/{job_id}/run")},
-    "test_mcp_server": {("POST", "/api/settings/mcp/test")},
-    "test_model": {("POST", "/api/settings/model/test")},
-    "list_model_providers": {("GET", "/api/settings/providers")},
-    "list_job_runs": {("GET", "/api/settings/jobs/{job_id}/runs")},
 }
 
 
@@ -65,6 +55,29 @@ def _iter_routes(routes: Iterable[Any]) -> Iterator[Any]:
             yield route
 
 
+# HTTP-only by design: deployment/admin config (settings, provider/model/MCP
+# checks, scheduled-job runs) and capture-queue moderation (list/review/
+# restate) are the vault operator's and the librarian's own concerns, not
+# something an arbitrary MCP client should be able to touch. The librarian's
+# in-process agent still reaches list_capture/review_capture directly via
+# mysharedbrain.tools.build_tools, entirely separate from this MCP surface;
+# the web UI reaches these settings/capture routes over HTTP as it always has.
+HTTP_ONLY_ROUTES: set[tuple[str, str]] = {
+    ("GET", "/api/settings"),
+    ("PUT", "/api/settings"),
+    ("GET", "/api/settings/export"),
+    ("PUT", "/api/settings/import"),
+    ("GET", "/api/settings/providers"),
+    ("POST", "/api/settings/model/test"),
+    ("POST", "/api/settings/mcp/test"),
+    ("POST", "/api/settings/jobs/{job_id}/run"),
+    ("GET", "/api/settings/jobs/{job_id}/runs"),
+    ("GET", "/api/capture"),
+    ("POST", "/api/capture/{entry_id}/review"),
+    ("PUT", "/api/capture/{entry_id}/status"),
+}
+
+
 def api_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
     for route in _iter_routes(create_app().routes):
@@ -72,7 +85,7 @@ def api_routes() -> set[tuple[str, str]]:
         path = getattr(route, "path", "")
         if methods and path.startswith("/api"):
             routes.update((m, path) for m in sorted(methods))
-    return routes
+    return routes - HTTP_ONLY_ROUTES
 
 
 def test_every_mapped_route_exists() -> None:

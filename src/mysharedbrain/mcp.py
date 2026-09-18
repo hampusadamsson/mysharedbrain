@@ -9,16 +9,13 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from dataclasses import asdict
 from typing import ParamSpec, TypeVar
 
 from fastapi import HTTPException
 from fastmcp import FastMCP
 
-from mysharedbrain import api_settings, capture
-from mysharedbrain.agent import check_mcp_server
+from mysharedbrain import capture
 from mysharedbrain.audit import KINDS
-from mysharedbrain.config import AgentConfig, MCPServerConfig
 from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -250,33 +247,6 @@ def recent_changes(limit: int = 20, offset: int = 0) -> dict[str, object]:
 
 @mcp.tool
 @_errors
-def list_capture(
-    status: str | None = None, limit: int = 50, offset: int = 0
-) -> dict[str, object]:
-    """List capture queue entries, optionally filtered by status (paged)."""
-    if status is not None and status not in (
-        "pending",
-        "applied",
-        "approved",
-        "rejected",
-    ):
-        raise ValueError(f"unknown status: {status!r}")
-    lib = librarian(actor="mcp")
-    entries = lib.list_capture(
-        capture.check_status(status) if status is not None else None, limit, offset
-    )
-    return {
-        "entries": [e.__dict__ for e in entries],
-        "total": lib.count_capture(
-            capture.check_status(status) if status is not None else None
-        ),
-        "limit": limit,
-        "offset": offset,
-    }
-
-
-@mcp.tool
-@_errors
 def search_notes(query: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
     """Search notes by name and content (ripgrep)."""
     result = librarian(actor="mcp").search(query, limit, offset)
@@ -295,110 +265,6 @@ def give_feedback(kind: str, body: str, note_id: str = "") -> dict[str, object]:
     """
     lib = librarian(actor="mcp")
     entry = lib.give_feedback(kind, body, note_id)  # type: ignore[arg-type]
-    return {"id": entry.id, "status": entry.status}
-
-
-@mcp.tool
-@_errors
-def review_capture(
-    entry_id: str,
-    verdict: str,
-    reviewer: str = "mcp",
-    content: str | None = None,
-    review_note: str = "",
-) -> dict[str, object]:
-    """Review a capture queue entry: applied (upserts the note with content),
-    approved (endorsed, no vault change) or rejected."""
-    if verdict not in ("applied", "approved", "rejected"):
-        raise ValueError(f"unknown verdict: {verdict!r}")
-    entry = librarian(actor="mcp").process_capture(
-        entry_id,
-        verdict,
-        reviewer,
-        content,
-        review_note,  # type: ignore[arg-type]
-    )
-    return {"id": entry.id, "status": entry.status}
-
-
-@mcp.tool
-@_errors
-def get_settings() -> dict[str, object]:
-    """Read the brain config: agent model, tools, MCP servers and jobs."""
-    return api_settings.get_settings().model_dump()
-
-
-@mcp.tool
-@_errors
-def update_settings(config: dict[str, object]) -> dict[str, object]:
-    """Replace the brain config (agent/tools/mcp_servers/jobs/metadata)."""
-    payload = api_settings.SettingsIn(config=config)
-    return api_settings.update_settings(payload).model_dump()
-
-
-@mcp.tool
-@_errors
-def list_model_providers() -> dict[str, object]:
-    """Model providers this install can reach, and what each one needs.
-
-    A provider whose SDK is missing is listed as unavailable with the install
-    hint. Use the names when configuring provider.name in the settings.
-    """
-    return api_settings.list_providers().model_dump()
-
-
-@mcp.tool
-@_errors
-async def test_model(agent: dict[str, object]) -> dict[str, object]:
-    """Check that the configured model answers, and how fast.
-
-    Takes the agent config (model string, token env) and makes one tiny real
-    request. Returns ``{ok, detail}`` — ok False carries the error text.
-    """
-    result = await api_settings.test_model(AgentConfig.model_validate(agent))
-    return result.model_dump()
-
-
-@mcp.tool
-@_errors
-async def test_mcp_server(server: dict[str, object]) -> dict[str, object]:
-    """Check that an MCP server connects, and list the tools it offers.
-
-    Returns ``{ok, detail, tools}`` — ok False carries the error text.
-    """
-    return asdict(await check_mcp_server(MCPServerConfig.model_validate(server)))
-
-
-@mcp.tool
-@_errors
-async def run_job(job_id: str) -> dict[str, object]:
-    """Run a scheduled librarian job immediately and return its run record."""
-    run = await api_settings.run_job(job_id)
-    return run.model_dump()
-
-
-@mcp.tool
-@_errors
-def list_job_runs(job_id: str, limit: int = 20) -> dict[str, object]:
-    """Recent runs of a scheduled job, newest first."""
-    return api_settings.job_runs(job_id, limit).model_dump()
-
-
-@mcp.tool
-@_errors
-def set_capture_status(
-    entry_id: str, status: str, reviewer: str = "mcp", review_note: str = ""
-) -> dict[str, object]:
-    """Set a capture entry's state outright: pending | applied | approved | rejected.
-
-    Use review_capture for a normal review; this is the override — it allows any
-    transition and changes the state only (no vault write).
-    """
-    if status not in capture.STATUSES:
-        raise ValueError(f"unknown status: {status!r}")
-    entry = librarian(actor="mcp").restate_capture(
-        entry_id, capture.check_status(status), reviewer, review_note
-    )
     return {"id": entry.id, "status": entry.status}
 
 

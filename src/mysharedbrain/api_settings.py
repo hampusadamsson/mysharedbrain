@@ -13,7 +13,9 @@ import os
 from dataclasses import asdict
 from typing import Any, cast
 
+import yaml
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ValidationError
 
 from mysharedbrain.agent import check_mcp_server, check_model, provider_catalog
@@ -25,8 +27,10 @@ from mysharedbrain.config import (
     MCPServerConfig,
     config_path,
     config_source,
+    export_config_yaml,
     load_config,
     parse_config,
+    parse_config_yaml,
 )
 from mysharedbrain.jobs import JobStore, get_scheduler
 from mysharedbrain.service import vault_root
@@ -64,6 +68,10 @@ class SettingsOut(BaseModel):
 
 class SettingsIn(BaseModel):
     config: dict[str, Any]
+
+
+class SettingsImportIn(BaseModel):
+    yaml: str
 
 
 class ProviderOut(BaseModel):
@@ -150,6 +158,17 @@ def get_settings() -> SettingsOut:
     return _snapshot(_current())
 
 
+@router.get(
+    "/settings/export",
+    response_class=PlainTextResponse,
+    summary="Effective config as YAML, redacted — usable as a seed file",
+)
+def export_settings() -> str:
+    # Redacted: this is the download-and-share path, and a leaked API key in
+    # a shared seed file is exactly the mistake redaction exists to prevent.
+    return export_config_yaml(_current(), redact=True)
+
+
 @router.put("/settings", response_model=SettingsOut, summary="Replace the brain config")
 def update_settings(payload: SettingsIn) -> SettingsOut:
     current = _current()
@@ -168,6 +187,24 @@ def update_settings(payload: SettingsIn) -> SettingsOut:
     # can stay read-only, and half-written YAML is not a failure mode.
     SettingsStore(vault_root()).save(cfg.model_dump(mode="json"))
     return _snapshot(cfg)
+
+
+@router.put(
+    "/settings/import",
+    response_model=SettingsOut,
+    summary="Replace the brain config from pasted/uploaded YAML",
+)
+def import_settings(payload: SettingsImportIn) -> SettingsOut:
+    """The Templates/Import tab's paste-a-file path: same YAML shape as
+    ``export_config_yaml`` produces, so a config exported from one install
+    round-trips into another exactly — and it goes through the same
+    validation and masked-token handling as :func:`update_settings`.
+    """
+    try:
+        data = parse_config_yaml(payload.yaml)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid yaml: {exc}") from exc
+    return update_settings(SettingsIn(config=data))
 
 
 def _check_tool_names(cfg: BrainConfigDocument) -> None:

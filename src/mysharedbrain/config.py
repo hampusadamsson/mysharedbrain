@@ -506,9 +506,50 @@ def parse_config(data: dict[str, Any]) -> BrainConfigDocument:
     return BrainConfigDocument.model_validate(data)
 
 
+def parse_config_yaml(text: str) -> dict[str, Any]:
+    """YAML text → a plain dict, exactly like the file loader (no layering).
+
+    Shared by the settings import endpoint and :func:`export_config_yaml`'s
+    round trip: same parser, same "empty file/empty mapping is fine, anything
+    else must be a mapping" rule the seed file follows.
+    """
+    data = yaml.safe_load(text)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("top level must be a mapping")
+    return cast("dict[str, Any]", data)
+
+
 def config_source() -> str:
     """Which layer the settings come from: database, file or defaults."""
     return SettingsStore(vault_root()).source(config_path())
+
+
+def export_config_yaml(
+    config: BrainConfigDocument | None = None, *, redact: bool = False
+) -> str:
+    """The *effective* config (defaults < file < database < env), as YAML.
+
+    Loading this text back as the seed file reproduces the same config —
+    field for field, byte for byte where it matters — because it is a plain
+    dump of the merged document, not a diff against any one layer. The one
+    thing that does not round-trip is an environment override: those still
+    win over whatever the file says, same as today, so a pinned
+    ``BRAIN__AGENT__MODEL`` continues to override this file exactly as it
+    overrides the database now.
+
+    Defaults to the current effective config (:func:`load_config`) — the same
+    view ``GET /api/settings`` shows — so a caller does not have to assemble
+    one first. ``redact=True`` masks the API key (see
+    :meth:`BrainConfigDocument.redacted`), which is what a download-and-share
+    path should use; the default is unredacted because a seed file that is
+    missing its own key is not a faithful copy of the running config.
+    """
+    if config is None:
+        config = load_config()
+    data = config.redacted() if redact else config.model_dump(mode="json")
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
 def save_config(config: BrainConfigDocument, path: Path | None = None) -> None:

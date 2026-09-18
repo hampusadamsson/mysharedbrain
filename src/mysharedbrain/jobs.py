@@ -259,7 +259,7 @@ class JobScheduler:
             log.warning("job %s: already running, skipping this trigger", job_id)
             run_id = self.store.start(job_id)
             self.store.finish(run_id, "skipped", "already running")
-            self._audit(lib, job.id, "skipped", "already running")
+            self._audit(lib, job, "skipped", "already running")
             run = self.store.get(run_id)
             assert run is not None
             return run
@@ -275,7 +275,7 @@ class JobScheduler:
                 f"{outcome.output}"
             )
             self.store.finish(run_id, "ok", detail)
-            self._audit(lib, job.id, "ok", detail)
+            self._audit(lib, job, "ok", detail)
             log.info(
                 "job %s: ok in %.1fs (%d request(s), %d tool call(s))",
                 job_id,
@@ -286,7 +286,7 @@ class JobScheduler:
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
             self.store.finish(run_id, "error", detail)
-            self._audit(lib, job.id, "error", detail)
+            self._audit(lib, job, "error", detail)
             log.exception(
                 "job %s: failed after %.1fs — %s",
                 job_id,
@@ -302,17 +302,23 @@ class JobScheduler:
         assert run is not None
         return run
 
-    def _audit(self, lib: Librarian, job_id: str, status: str, detail: str) -> None:
-        """Log one job outcome to the audit trail, tagged with the librarian."""
+    def _audit(self, lib: Librarian, job: JobSpec, status: str, detail: str) -> None:
+        """Log one job outcome to the audit trail, tagged with the librarian.
+
+        The job's own name identifies it in the log — not its id — so the
+        audit trail reads the way the settings page names the job. Falls back
+        to the id when a job has no name, same as the jobs list does.
+        """
         first_line = detail.splitlines()[0] if detail else ""
+        label = job.name or job.id
         try:
             lib.audit.append(
                 actor=LIBRARIAN_ACTOR,
                 action=f"job-{status}",
-                detail=f"job:{job_id} — {first_line}",
+                detail=f"job:{label} — {first_line}",
             )
         except Exception:  # auditing must never break the run
-            log.exception("could not audit job %s", job_id)
+            log.exception("could not audit job %s", job.id)
 
     def status(self) -> list[JobStatus]:
         """Per-job view for the settings UI: schedule, next/last run."""

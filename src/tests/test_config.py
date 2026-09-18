@@ -13,9 +13,12 @@ from mysharedbrain.config import (
     AdminConfig,
     AgentConfig,
     BrainConfig,
+    BrainConfigDocument,
     JobSpec,
+    export_config_yaml,
     load_config,
     parse_config,
+    parse_config_yaml,
     parse_duration,
 )
 
@@ -166,6 +169,85 @@ def test_env_overrides_admin_dir(
 ) -> None:
     monkeypatch.setenv("BRAIN__ADMIN__DIR", "meta")
     assert load_config().admin.dir == "meta"
+
+
+def test_exported_yaml_round_trips_into_an_identical_config(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Feed the export back in as the seed file: same effective config."""
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "agent": {"model": "openai:gpt-4o", "api_key": "sk-secret"},
+                "admin": {"dir": "meta"},
+                "mcp_servers": [
+                    {
+                        "name": "lab",
+                        "transport": "http",
+                        "url": "https://lab/mcp",
+                        "insecure": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    original = load_config()
+    exported = export_config_yaml(original)
+
+    reseeded = config_file.parent / "exported.yaml"
+    reseeded.write_text(exported, encoding="utf-8")
+    monkeypatch.setenv("BRAIN_CONFIG", str(reseeded))
+
+    round_tripped = load_config()
+    assert round_tripped.model_dump(mode="json") == original.model_dump(mode="json")
+
+
+def test_export_defaults_to_the_effective_config(config_file: Path) -> None:
+    """No args: exports what GET /api/settings would show right now."""
+    config_file.write_text(
+        yaml.safe_dump({"agent": {"model": "openai:gpt-4o"}}), encoding="utf-8"
+    )
+    exported = export_config_yaml()
+    assert yaml.safe_load(exported)["agent"]["model"] == "openai:gpt-4o"
+
+
+def test_export_can_redact_the_api_key(config_file: Path) -> None:
+    cfg = BrainConfigDocument(agent=AgentConfig(api_key="sk-secret"))
+    assert "sk-secret" not in export_config_yaml(cfg, redact=True)
+    assert MASK in export_config_yaml(cfg, redact=True)
+    assert "sk-secret" in export_config_yaml(cfg, redact=False)
+
+
+def test_env_override_still_wins_over_an_exported_seed_file(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The export is a faithful seed file, not a way to escape env precedence."""
+    config_file.write_text(
+        yaml.safe_dump({"agent": {"model": "openai:gpt-4o"}}), encoding="utf-8"
+    )
+    exported = export_config_yaml()
+    reseeded = config_file.parent / "exported.yaml"
+    reseeded.write_text(exported, encoding="utf-8")
+    monkeypatch.setenv("BRAIN_CONFIG", str(reseeded))
+    monkeypatch.setenv("BRAIN__AGENT__MODEL", "from-env")
+
+    assert load_config().agent.model == "from-env"
+
+
+def test_parse_config_yaml_matches_the_file_loader() -> None:
+    text = yaml.safe_dump({"agent": {"model": "openai:gpt-4o"}})
+    assert parse_config_yaml(text) == {"agent": {"model": "openai:gpt-4o"}}
+
+
+def test_parse_config_yaml_empty_document_is_an_empty_mapping() -> None:
+    assert parse_config_yaml("") == {}
+    assert parse_config_yaml("# just a comment") == {}
+
+
+def test_parse_config_yaml_rejects_a_non_mapping_top_level() -> None:
+    with pytest.raises(ValueError, match="top level must be a mapping"):
+        parse_config_yaml("- a\n- list")
 
 
 def test_duration_parsing() -> None:

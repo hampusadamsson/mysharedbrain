@@ -59,22 +59,37 @@ async def test_mcp_feedback_and_question(vault_dir: Path) -> None:
     assert fb == {"ok": True, "id": fb["id"], "status": "pending"}
     bad = await call("give_feedback", {"kind": "bogus", "body": "x"})
     assert bad["ok"] is False
-    rev = await call(
-        "review_capture",
-        {"entry_id": fb["id"], "verdict": "approved", "reviewer": "curator"},
-    )
-    assert rev == {"ok": True, "id": fb["id"], "status": "approved"}
-    dup = await call("review_capture", {"entry_id": fb["id"], "verdict": "rejected"})
-    assert dup["ok"] is False
-    listed = await call("list_capture", {"status": "approved"})
-    found_ids = [e["id"] for e in cast("list[dict[str, str]]", listed["entries"])]
-    assert fb["id"] in found_ids
-    assert "error" in await call("list_capture", {"status": "bogus"})
+    # Reviewing/listing the capture queue is the librarian's own job, not an
+    # MCP tool — confirmed missing here rather than exercised.
     found = await call("ask_question", {"question": "elitedesk"})
     assert found["found"] is True
     missing = await call("ask_question", {"question": "absent topic xyz"})
     assert missing["found"] is False
     assert missing["entry_id"]
+
+
+async def test_mcp_has_no_admin_or_capture_moderation_tools(vault_dir: Path) -> None:
+    """MCP is the vault interaction surface; settings and capture moderation
+    stay with the deployment owner (settings UI) and the librarian's own
+    in-process tools (mysharedbrain.tools.build_tools), never a remote client.
+    """
+    from fastmcp import Client
+
+    async with Client(mcp) as client:
+        names = {t.name for t in await client.list_tools()}
+    removed = {
+        "get_settings",
+        "update_settings",
+        "list_model_providers",
+        "test_model",
+        "test_mcp_server",
+        "run_job",
+        "list_job_runs",
+        "list_capture",
+        "review_capture",
+        "set_capture_status",
+    }
+    assert not (names & removed)
 
 
 async def test_mcp_obsidian_parity_tools(vault_dir: Path) -> None:
