@@ -38,8 +38,9 @@ def test_get_settings_returns_config_tools_and_path(
     # a fresh install shows the shipped (disabled) schedule rather than nothing
     assert [j["id"] for j in body["jobs"]] == [
         "capture-triage",
-        "vault-sweep",
-        "source-check",
+        "capture-apply",
+        "vault-layout",
+        "vault-audit",
     ]
     assert all(j["enabled"] is False for j in body["jobs"])
     assert all(j["next_run"] == "" for j in body["jobs"]), "nothing may be scheduled"

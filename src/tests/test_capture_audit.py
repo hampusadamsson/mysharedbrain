@@ -285,7 +285,7 @@ def test_every_tool_declares_a_vault_local_scope() -> None:
 
 def test_capture_tools_are_the_only_non_note_tools() -> None:
     capture = {name for name, spec in TOOLS.items() if spec.scope == "capture"}
-    assert capture == {"list_capture", "review_capture"}
+    assert capture == {"list_capture", "review_capture", "give_feedback"}
 
 
 def test_no_tool_runs_a_command() -> None:

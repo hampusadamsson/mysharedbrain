@@ -44,7 +44,7 @@
 	// Model providers the server can reach, and which one is in effect.
 	let providers = $state<ProviderInfo[]>([]);
 
-	const TABS = ['agent', 'jobs', 'tools', 'mcp', 'config'] as const;
+	const TABS = ['agent', 'ask', 'jobs', 'tools', 'mcp', 'config'] as const;
 	type Tab = (typeof TABS)[number];
 
 	const SOURCES: Record<string, string> = {
@@ -240,6 +240,96 @@
 		if (draft) draft.agent.temperature = value === '' ? null : Number(value);
 	}
 
+	function clearAgentInstructionsFile() {
+		if (draft) draft.agent.instructions_file = '';
+	}
+
+	function clearAskInstructionsFile() {
+		if (draft) draft.ask.instructions_file = null;
+	}
+
+	/** Ask with no list runs every tool enabled in the Tools tab. */
+	function askToolOn(tool: ToolInfo): boolean {
+		const tools = draft?.ask.tools;
+		return toolEnabled(tool) && (tools == null || tools.includes(tool.name));
+	}
+
+	function askToolLocked(tool: ToolInfo): boolean {
+		// Same rule as jobs: can't pick a tool that is switched off, but a stale
+		// entry in an existing list must stay removable.
+		return !toolEnabled(tool) && !(draft?.ask.tools?.includes(tool.name) ?? false);
+	}
+
+	function askToolSummary(): string {
+		const tools = draft?.ask.tools;
+		if (tools === null || tools === undefined) return 'every enabled tool';
+		if (tools.length === 0) return 'no tools — asking can do nothing';
+		const total = settings?.tools.length ?? 0;
+		const unavailable = tools.filter((name) => !toolEnabledByName(name)).length;
+		const base = `${tools.length} of ${total} tools`;
+		return unavailable > 0 ? `${base} · ${unavailable} switched off` : base;
+	}
+
+	function toggleAskTool(tool: ToolInfo) {
+		if (!draft) return;
+		const current = draft.ask.tools ?? enabledToolNames;
+		const next = current.includes(tool.name)
+			? current.filter((name) => name !== tool.name)
+			: [...current, tool.name];
+		const allOn =
+			enabledToolNames.length > 0 && enabledToolNames.every((name) => next.includes(name));
+		draft.ask.tools = allOn ? null : next;
+	}
+
+	function askServerOn(server: MCPServerConfig): boolean {
+		const names = draft?.ask.mcp_servers;
+		return server.enabled && (names == null || names.includes(server.name));
+	}
+
+	function askServerLocked(server: MCPServerConfig): boolean {
+		return !server.enabled && !(draft?.ask.mcp_servers?.includes(server.name) ?? false);
+	}
+
+	function askServerSummary(): string {
+		const names = draft?.ask.mcp_servers;
+		if (names === null || names === undefined) return 'every enabled server';
+		if (names.length === 0) return 'no servers — asking gets no remote tools';
+		const unavailable = names.filter(
+			(name) => !servers.find((s) => s.name === name)?.enabled
+		).length;
+		const base = `${names.length} of ${servers.length} servers`;
+		return unavailable > 0 ? `${base} · ${unavailable} switched off` : base;
+	}
+
+	function toggleAskServer(server: MCPServerConfig) {
+		if (!draft) return;
+		const current = draft.ask.mcp_servers ?? enabledServerNames;
+		const next = current.includes(server.name)
+			? current.filter((name) => name !== server.name)
+			: [...current, server.name];
+		const allOn =
+			enabledServerNames.length > 0 && enabledServerNames.every((name) => next.includes(name));
+		draft.ask.mcp_servers = allOn ? null : next;
+	}
+
+	function setAskEnabled(on: boolean) {
+		if (draft) draft.ask.enabled = on;
+	}
+
+	function resetAskTools() {
+		if (draft) draft.ask.tools = null;
+	}
+
+	function resetAskServers() {
+		if (draft) draft.ask.mcp_servers = null;
+	}
+
+	function setAskMaxSteps(value: string) {
+		if (!draft) return;
+		const n = Number(value);
+		draft.ask.max_steps = value === '' || !Number.isInteger(n) || n < 1 ? null : n;
+	}
+
 	// Config tab: extract the effective config as YAML, or replace it wholesale
 	// by pasting/uploading YAML in the same shape.
 	let exportedYaml = $state('');
@@ -347,15 +437,27 @@
 	}
 
 	let instructionPickerOpen = $state(false);
-	let instructionPickerJob = $state<JobSpec | null>(null);
+	let instructionPickerJob = $state<JobSpec | 'agent' | 'ask' | null>(null);
 
-	function openInstructionPicker(job: JobSpec) {
+	function openInstructionPicker(job: JobSpec | 'agent' | 'ask') {
 		instructionPickerJob = job;
 		instructionPickerOpen = true;
 	}
 
+	function instructionPickerValue(): string | null {
+		if (instructionPickerJob === 'agent') return draft?.agent.instructions_file ?? null;
+		if (instructionPickerJob === 'ask') return draft?.ask.instructions_file ?? null;
+		return instructionPickerJob?.instructions_file ?? null;
+	}
+
 	function chooseInstructionNote(id: string) {
-		if (instructionPickerJob) instructionPickerJob.instructions_file = id;
+		if (instructionPickerJob === 'agent') {
+			if (draft) draft.agent.instructions_file = id;
+		} else if (instructionPickerJob === 'ask') {
+			if (draft) draft.ask.instructions_file = id;
+		} else if (instructionPickerJob) {
+			instructionPickerJob.instructions_file = id;
+		}
 	}
 
 	function toggleTool(name: string, enabled: boolean) {
@@ -519,6 +621,10 @@
 				job.mcp_servers = rest.length === 0 ? [] : rest;
 			}
 		}
+		if (draft.ask.mcp_servers?.includes(gone.name)) {
+			const rest = draft.ask.mcp_servers.filter((name) => name !== gone.name);
+			draft.ask.mcp_servers = rest.length === 0 ? [] : rest;
+		}
 	}
 </script>
 
@@ -559,6 +665,7 @@
 		<div class="-mx-1 overflow-x-auto px-1">
 			<Tabs.List>
 				<Tabs.Trigger value="agent">Agent</Tabs.Trigger>
+				<Tabs.Trigger value="ask">Ask</Tabs.Trigger>
 				<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>
 				<Tabs.Trigger value="tools">Tools</Tabs.Trigger>
 				<Tabs.Trigger value="mcp">MCP servers</Tabs.Trigger>
@@ -719,18 +826,29 @@
 							provider decide".
 						</p>
 					</div>
-					<div class="grid gap-2">
-						<Label for="instrfile">Instructions note</Label>
-						<Input
-							id="instrfile"
-							bind:value={draft.agent.instructions_file}
-							placeholder="librarian.md"
-							spellcheck="false"
-						/>
-					</div>
 					<div class="grid gap-2 sm:col-span-2">
-						<Label for="instr">Inline instructions</Label>
-						<Textarea id="instr" bind:value={draft.agent.instructions} class="min-h-24"></Textarea>
+						<Label>Instructions note</Label>
+						<div class="flex gap-2">
+							<Input
+								value={draft.agent.instructions_file}
+								readonly
+								aria-label="Instructions note for the agent"
+								placeholder="none chosen"
+								onclick={() => openInstructionPicker('agent')}
+							/>
+							<Button size="sm" variant="outline" onclick={() => openInstructionPicker('agent')}>
+								Choose…
+							</Button>
+							{#if draft.agent.instructions_file}
+								<Button size="sm" variant="ghost" onclick={clearAgentInstructionsFile}>
+									Clear
+								</Button>
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">
+							Standing instructions for every run; a job's own instructions note is appended on top
+							of these, not instead of them.
+						</p>
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -762,6 +880,149 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
+		</Tabs.Content>
+
+		<Tabs.Content value="ask" class="mt-4 space-y-4">
+			{#if tab === 'ask'}
+				<Card.Root>
+					<Card.Header>
+						<Card.Title class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+							<span>Ask the librarian</span>
+							<Badge variant={draft.ask.enabled ? 'default' : 'secondary'}>
+								{draft.ask.enabled ? 'enabled' : 'disabled'}
+							</Badge>
+						</Card.Title>
+						<Card.Description>
+							One agent run per question from the Ask page — same model and instructions as
+							everything else, scoped by the lists below. Off means the Ask page and <code
+								>POST /api/request</code
+							> refuse to run.
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="grid gap-4 sm:grid-cols-2">
+						<div class="grid gap-2 sm:col-span-2">
+							<label class="flex cursor-pointer items-center gap-1.5 text-sm font-medium">
+								<Checkbox
+									checked={draft.ask.enabled}
+									aria-label="Enable Ask the librarian"
+									onCheckedChange={(v) => setAskEnabled(v === true)}
+								/>
+								Enable
+							</label>
+						</div>
+						<div class="grid gap-2 sm:col-span-2">
+							<Label>Instructions note</Label>
+							<div class="flex gap-2">
+								<Input
+									value={draft.ask.instructions_file ?? ''}
+									readonly
+									aria-label="Instructions note for asking"
+									placeholder="none chosen"
+									onclick={() => openInstructionPicker('ask')}
+								/>
+								<Button size="sm" variant="outline" onclick={() => openInstructionPicker('ask')}>
+									Choose…
+								</Button>
+								{#if draft.ask.instructions_file}
+									<Button size="sm" variant="ghost" onclick={clearAskInstructionsFile}>
+										Clear
+									</Button>
+								{/if}
+							</div>
+							<p class="text-xs text-muted-foreground">
+								Scoped instructions for answering; the agent's own note still applies underneath,
+								like it does for jobs.
+							</p>
+						</div>
+						<div class="grid gap-2 sm:col-span-2">
+							<div class="flex flex-wrap items-baseline gap-2">
+								<Label>Tools</Label>
+								<span class="text-xs text-muted-foreground">{askToolSummary()}</span>
+								{#if draft.ask.tools !== null}
+									<Button size="sm" variant="ghost" onclick={resetAskTools}>Use all enabled</Button>
+								{/if}
+							</div>
+							<ul class="divide-y rounded-lg border">
+								{#each settings.tools as tool (tool.name)}
+									{@const on = askToolOn(tool)}
+									{@const locked = askToolLocked(tool)}
+									<li>
+										<label
+											class={cn(
+												'flex items-center gap-3 px-4 py-3',
+												locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+											)}
+											title={locked
+												? `${tool.name} is switched off in the Tools tab`
+												: tool.description}
+										>
+											<Checkbox
+												checked={on}
+												disabled={locked}
+												aria-label={tool.name}
+												onCheckedChange={() => toggleAskTool(tool)}
+											/>
+											<div class="min-w-0 flex-1">
+												<code class="text-sm font-medium">{tool.name}</code>
+												<p class="text-xs text-muted-foreground">{tool.description}</p>
+											</div>
+										</label>
+									</li>
+								{/each}
+							</ul>
+						</div>
+						<div class="grid gap-2 sm:col-span-2">
+							<div class="flex flex-wrap items-baseline gap-2">
+								<Label>MCP servers</Label>
+								<span class="text-xs text-muted-foreground">{askServerSummary()}</span>
+								{#if draft.ask.mcp_servers !== null}
+									<Button size="sm" variant="ghost" onclick={resetAskServers}>
+										Use all enabled
+									</Button>
+								{/if}
+							</div>
+							{#if servers.length === 0}
+								<p class="text-xs text-muted-foreground">
+									No MCP servers registered — add one in the MCP servers tab.
+								</p>
+							{:else}
+								<div class="flex flex-wrap gap-1.5">
+									{#each servers as server (server.name)}
+										{@const on = askServerOn(server)}
+										<Button
+											size="sm"
+											variant={on ? 'default' : 'outline'}
+											aria-pressed={on}
+											disabled={askServerLocked(server)}
+											title={askServerLocked(server)
+												? `${server.name} is switched off in the MCP servers tab`
+												: server.url}
+											onclick={() => toggleAskServer(server)}
+										>
+											{server.name}
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<div class="grid gap-2">
+							<Label for="ask-steps">Max steps</Label>
+							<Input
+								id="ask-steps"
+								type="number"
+								step="1"
+								min="1"
+								value={draft.ask.max_steps}
+								placeholder="agent default"
+								oninput={(e) => setAskMaxSteps(e.currentTarget.value)}
+							/>
+							<p class="text-xs text-muted-foreground">
+								Empty means the agent default. One question rarely needs many steps.
+							</p>
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
 		</Tabs.Content>
 
 		<Tabs.Content value="jobs" class="mt-4 space-y-4">
@@ -878,10 +1139,6 @@
 									</Button>
 								{/if}
 							</div>
-						</div>
-						<div class="grid gap-2 sm:col-span-2">
-							<Label>Instructions</Label>
-							<Textarea bind:value={job.instructions} class="min-h-24"></Textarea>
 						</div>
 						<div class="grid gap-2 sm:col-span-2">
 							<div class="flex flex-wrap items-baseline gap-2">
@@ -1197,7 +1454,7 @@
 
 <NotePickerDialog
 	bind:open={instructionPickerOpen}
-	value={instructionPickerJob?.instructions_file ?? null}
+	value={instructionPickerValue()}
 	title="Choose an instructions note"
 	onselect={chooseInstructionNote}
 />

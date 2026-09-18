@@ -117,32 +117,45 @@ def test_capture_approve_flow(vault_dir: Path) -> None:
     assert [e["id"] for e in entries] == [entry_id]
 
 
-def test_request_found_and_missing(vault_dir: Path) -> None:
+def test_request_runs_one_ask_run(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``POST /api/request`` delegates to the ask loop (no model in tests)."""
+    from mysharedbrain.ask import AskAnswer
+
+    async def fake(
+        cfg: object, lib: object, question: str, model: object = None
+    ) -> AskAnswer:
+        return AskAnswer(
+            found=True,
+            question=question,
+            note_ids=["homelab"],
+            hits=[],
+            entry_id="",
+            message="homelab runs k3s.",
+        )
+
+    monkeypatch.setattr(app_module, "run_ask", fake)
     c = client(vault_dir)
-    c.post("/api/notes", json={"id": "homelab", "content": "k3s"})
     found = c.post("/api/request", json={"question": "k3s"}).json()
     assert found["found"] is True
-    assert "homelab" in found["note_ids"]
-    missing = c.post(
-        "/api/request", json={"question": "totally absent topic xyz"}
-    ).json()
-    assert missing["found"] is False
-    assert missing["entry_id"]
-    assert c.get("/api/capture", params={"status": "pending"}).json()["entries"]
+    assert found["note_ids"] == ["homelab"]
+    assert found["message"] == "homelab runs k3s."
 
 
-def test_ask_endpoint_files_an_automated_question(vault_dir: Path) -> None:
+def test_request_refuses_when_ask_is_disabled(
+    vault_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mysharedbrain.config import AskConfig, BrainConfigDocument
+
+    def _disabled() -> BrainConfigDocument:
+        return BrainConfigDocument(ask=AskConfig(enabled=False))
+
+    monkeypatch.setattr(app_module, "load_config", _disabled)
     c = client(vault_dir)
-    answer = c.post(
-        "/api/request", json={"question": "totally absent topic xyz"}
-    ).json()
-    entries = c.get("/api/capture", params={"status": "pending"}).json()["entries"]
-    assert [e["id"] for e in entries] == [answer["entry_id"]]
-    assert entries[0]["kind"] == "question"
-    assert entries[0]["automated"] is True
-    # and the audit trail says it was machine-filed
-    detail = c.get("/api/audit").json()["entries"][0]["detail"]
-    assert detail.endswith("(automated)")
+    res = c.post("/api/request", json={"question": "k3s"})
+    assert res.status_code == 404
+    assert res.json()["detail"] == "ask the librarian is disabled"
 
 
 def test_feedback_accepts_question_kind_and_automated_flag(vault_dir: Path) -> None:

@@ -150,6 +150,19 @@ def _review_capture(lib: Librarian) -> Callable[..., Any]:
     return review_capture
 
 
+def _give_feedback(lib: Librarian) -> Callable[..., Any]:
+    def give_feedback(kind: str, body: str, note_id: str = "") -> str:
+        """File feedback for review: an edit, a missing note, a request — or
+        an unanswered question. Lands in the capture queue as pending; the
+        librarian reviews (applied/approved/rejected) before anything touches
+        the vault. Returns the queue entry id."""
+        if kind not in ("edit", "missing", "request", "question"):
+            raise ValueError(f"unknown kind: {kind!r}")
+        return lib.give_feedback(kind, body, note_id).id  # type: ignore[arg-type]
+
+    return give_feedback
+
+
 def _as_status(status: str | None) -> Status | None:
     if status is None:
         return None
@@ -179,6 +192,12 @@ _TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec("move_note", "Move or rename a note", "vault", _move_note),
     ToolSpec("list_capture", "List capture queue entries", "capture", _list_capture),
     ToolSpec("review_capture", "Review a capture entry", "capture", _review_capture),
+    ToolSpec(
+        "give_feedback",
+        "File feedback for review (returns the queue entry id)",
+        "capture",
+        _give_feedback,
+    ),
 )
 
 TOOLS: dict[str, ToolSpec] = {spec.name: spec for spec in _TOOLS}

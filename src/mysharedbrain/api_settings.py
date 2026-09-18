@@ -217,6 +217,9 @@ def _check_tool_names(cfg: BrainConfigDocument) -> None:
         job_unknown = set(job.tools or ()) - known
         if job_unknown:
             raise ValueError(f"job {job.id!r}: unknown tool(s) {sorted(job_unknown)}")
+    ask_unknown = set(cfg.ask.tools or ()) - known
+    if ask_unknown:
+        raise ValueError(f"ask: unknown tool(s) {sorted(ask_unknown)}")
 
 
 @router.get(

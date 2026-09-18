@@ -9,13 +9,15 @@ wiki: view it as a wiki in the web UI, CRUD any page, move notes, search by
 name or content. One note = one `.md` file, folders = real folders, flat or
 nested.
 
-Think of it as a **librarian**: ask for information and it is presented when
-available; missing information is **logged for future action** so the librarian
-can retrieve it later. The **feedback** function is the improvement queue —
-edits, missing-info notes, requests. In increments the librarian
-**processes the capture queue** (reviewed and double-checked) before updating
-the vault. All changes to the vault and the queue are **audited** (like git).
-Mutations flow through one audited service layer, exposed to agents via **MCP**.
+Think of it as a **brain with a librarian**: gather information from it, add
+to it, remove from it, edit it — and it gets smarter from the interaction.
+The **feedback** function is the critical loop: file a note and the brain
+updates itself in the future, either from the information you hand over or
+from where you say to get it. In increments the librarian **processes the
+capture queue** (reviewed and double-checked) before updating the vault, so
+teaching is always safe and never silent. All changes to the vault and the
+queue are **audited** (like git). Mutations flow through one audited service
+layer, exposed to agents via **MCP**.
 
 ## Repo layout
 
@@ -72,10 +74,15 @@ uv run mysharedbrain --mcp       # MCP server over stdio
 
 ## MCP tools
 
-MCP is the vault interaction surface for end users — notes, search, feedback,
-questions. Deployment config (settings, model/MCP/job checks and runs) and
-capture-queue moderation stay behind the Settings UI and the librarian's own
-in-process tools; they're not exposed to MCP clients.
+MCP is how you use the brain: gather information (read, search, browse), add
+to it (create, append), edit it (update, patch, frontmatter) and remove from
+it (soft-delete, move, restore). `give_feedback` is the critical loop — teach
+the brain by filing what it gets wrong, what is missing (with the content or
+where to find it), or what to fetch; the librarian applies it later. Asking
+with no answer files an automated question the same way, so nothing is lost.
+Deployment config (settings, model/MCP/job checks and runs) and capture-queue
+moderation stay behind the Settings UI and the librarian's own in-process
+tools; they're not exposed to MCP clients.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -247,15 +254,31 @@ WARNING and a `skipped` run. Nothing due is DEBUG, so a quiet brain stays quiet.
 Set `BRAIN_LOG_LEVEL=DEBUG` for more. `configure_logging()` runs at startup —
 without it the root logger has no handler and INFO goes nowhere.
 
+### Ask the librarian
+
+The Ask page (`POST /api/request`) is one interactive agent run per question —
+the same librarian model, instructions and tools plumbing as a job, but with no
+schedule. How it runs lives in the `ask:` config section (Settings → Ask): an
+enable switch, its own instructions note, tool/MCP-server restrictions and a
+step budget. Off means the page and the endpoint refuse to run. The run answers
+from the vault and files capture entries itself (`give_feedback`) when the vault
+cannot answer, so a miss lands in the queue for review instead of going silent.
+
 ### Shipped schedule
 
-The example schedule is also the **default**: three disabled jobs
-(`capture-triage` every 4h, `vault-sweep` cron `0 3 */2 * *`, `source-check`
-every 6d) with `scheduler.enabled: false`. A fresh install therefore shows the
-shapes worth having in Settings → Jobs while running nothing, and the Settings
-page says so plainly until you enable a job *and* the scheduler. A test keeps
-`brain.example.yaml` and the defaults in step, so the documentation cannot drift
-from the behaviour.
+The example schedule is also the **default**: four disabled jobs forming a
+capture pipeline plus vault upkeep, with `scheduler.enabled: false`.
+`capture-triage` (every 4h) rules on pending entries — approved or rejected,
+never applied. `capture-apply` (daily) incorporates the approved ones group by
+group and marks them applied. `vault-layout` (Sunday 03:00) owns the layout
+template and reshapes notes to match it, never deleting. `vault-audit`
+(Saturday 04:00) walks every note and files capture requests, never editing
+directly. Each job only gets the tools its stage needs, so the pipeline flows
+one way: audit proposes → triage rules → apply incorporates. A fresh install
+therefore shows the shapes worth having in Settings → Jobs while running
+nothing, and the Settings page says so plainly until you enable a job *and*
+the scheduler. A test keeps `brain.example.yaml` and the defaults in step, so
+the documentation cannot drift from the behaviour.
 
 Plus MCP resources (`vault://<id>`, `vault://index`) and prompts
 (`ask_librarian`, `file_feedback`).
@@ -372,11 +395,16 @@ into the UI or the log that way.
 
 ## Capture kinds
 
-Queue entries are of kind `edit`, `missing`, `request` or `question`. Ones the
-system files on its own — an unanswered question the librarian could not resolve
-— are marked `automated`, so a reviewer can tell machine-filed work from a
-person's. Asking with no answer files a `question`; anything a human queues in
-the UI stays unmarked.
+Queue entries are of kind `edit`, `missing`, `request` or `question` — each one
+a note for the brain to update itself from in the future. An `edit` corrects
+what the vault gets wrong; a `missing` names a gap and carries the content or
+where to find it; a `request` asks the librarian to fetch or do something; a
+`question` leaves an open question for future retrieval. The brain is a
+self-learning system that requires interaction: no feedback, no learning. Ones
+the system files on its own — an unanswered question the librarian could not
+resolve — are marked `automated`, so a reviewer can tell machine-filed work
+from a person's. Asking with no answer files a `question`; anything a human
+queues in the UI stays unmarked.
 
 State is `pending` → `applied` / `approved` / `rejected`, normally through a
 review (`POST /api/capture/{id}/review`), which is guarded: an entry can never be

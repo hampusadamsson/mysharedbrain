@@ -19,7 +19,7 @@ import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import version
 from typing import Any
@@ -30,13 +30,19 @@ from openai import AsyncOpenAI
 from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.providers import infer_provider_class
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
 
-from mysharedbrain.config import BrainConfigDocument, JobSpec, MCPServerConfig
+from mysharedbrain.config import (
+    AskConfig,
+    BrainConfigDocument,
+    JobSpec,
+    MCPServerConfig,
+)
 from mysharedbrain.service import Librarian
 from mysharedbrain.tools import build_tools
 
@@ -52,6 +58,9 @@ class AgentOutcome:
     output: str
     requests: int
     tool_calls: int
+    messages: list[ModelMessage] = field(default_factory=list)
+    """The run's messages — callers that need evidence (which notes were
+    read, whether feedback was filed) parse the tool parts from these."""
 
 
 #: How long an MCP connect check may take before it is called a failure.
@@ -510,19 +519,21 @@ def build_mcp_toolsets(
 def build_agent(
     cfg: BrainConfigDocument,
     lib: Librarian,
-    job: JobSpec | None = None,
+    scope: JobSpec | AskConfig | None = None,
     model: Model | None = None,
 ) -> Agent[None, str]:
-    """Agent for one run: job-scoped tools, toolsets and instructions.
+    """Agent for one run: scope-restricted tools, toolsets and instructions.
 
-    ``model`` overrides the configured model — tests pass a ``TestModel`` so a
-    full run can be exercised without credentials.
+    ``scope`` is a job (scheduled run) or the ask config (one interactive
+    question); ``None`` means every enabled tool and server. ``model``
+    overrides the configured model — tests pass a ``TestModel`` so a full run
+    can be exercised without credentials.
     """
     _resolve_api_key(cfg)
     enabled = {name: spec.enabled for name, spec in cfg.tools.items()}
-    only = job.tools if job is not None else None
+    only = scope.tools if scope is not None else None
     builtin = build_tools(lib, enabled, only)
-    toolsets = build_mcp_toolsets(cfg, job.mcp_servers if job is not None else None)
+    toolsets = build_mcp_toolsets(cfg, scope.mcp_servers if scope is not None else None)
     settings = ModelSettings()
     if cfg.agent.temperature is not None:
         settings["temperature"] = cfg.agent.temperature
@@ -537,13 +548,19 @@ def build_agent(
         "You are the librarian for a shared markdown vault. Use only the "
         "provided tools; keep notes coherent and audit every change."
     )
+    if scope is None:
+        run_name = "librarian"
+    elif isinstance(scope, JobSpec):
+        run_name = f"librarian:{scope.id}"
+    else:
+        run_name = "librarian:ask"
     return Agent(
         model,
         instructions=instructions,
         tools=builtin,
         toolsets=toolsets,
         model_settings=settings,
-        name=f"librarian:{job.id}" if job else "librarian",
+        name=run_name,
     )
 
 
@@ -566,12 +583,12 @@ async def run_agent(
     cfg: BrainConfigDocument,
     lib: Librarian,
     prompt: str,
-    job: JobSpec | None = None,
+    scope: JobSpec | AskConfig | None = None,
     model: Model | None = None,
 ) -> AgentOutcome:
-    """Build the agent for ``job`` and run ``prompt`` to completion."""
-    agent = build_agent(cfg, lib, job, model)
-    max_steps = job.max_steps if job and job.max_steps else cfg.agent.max_steps
+    """Build the agent for ``scope`` and run ``prompt`` to completion."""
+    agent = build_agent(cfg, lib, scope, model)
+    max_steps = scope.max_steps if scope and scope.max_steps else cfg.agent.max_steps
     result: AgentRunResult[str] = await agent.run(
         prompt, usage_limits=UsageLimits(request_limit=max_steps)
     )
@@ -580,6 +597,7 @@ async def run_agent(
         output=str(result.output),
         requests=int(usage.requests),
         tool_calls=int(usage.tool_calls),
+        messages=result.new_messages(),
     )
 
 

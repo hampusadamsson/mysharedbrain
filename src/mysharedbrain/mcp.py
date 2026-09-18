@@ -24,7 +24,19 @@ from mysharedbrain.vault import (
     SectionNotFound,
 )
 
-mcp = FastMCP("mysharedbrain")
+_BRAIN_INSTRUCTIONS = """MySharedBrain is a shared brain: a markdown vault an AI
+assistant reads, writes and tends. Use it to gather information (read, search,
+browse), add to it (create, append), edit it (update, patch, frontmatter) and
+remove from it (soft-delete to trash, move/rename, restore).
+
+Feedback is the critical loop: this brain learns from interaction. Whenever
+something is wrong, missing or worth fetching, file it with give_feedback —
+either the information itself or where to get it. The entry lands in the
+capture queue as pending and the librarian reviews it
+(applied/approved/rejected) before the vault changes, so teaching the brain is
+always safe and never silent."""
+
+mcp = FastMCP("mysharedbrain", instructions=_BRAIN_INSTRUCTIONS)
 
 _ERRORS = (
     NoteNotFound,
@@ -259,7 +271,13 @@ def search_notes(query: str, limit: int = 20, offset: int = 0) -> dict[str, obje
 @mcp.tool
 @_errors
 def give_feedback(kind: str, body: str, note_id: str = "") -> dict[str, object]:
-    """Queue feedback: correct info, flag missing info, or file a request.
+    """Teach the brain: queue feedback the librarian applies later.
+
+    This is the self-learning loop — the single most important tool here.
+    Either hand over the information itself (a correction, a fact, content for
+    a missing note) or say where to get it (a source to check, what is
+    missing). The entry lands in the capture queue as pending and the
+    librarian reviews it (applied/approved/rejected) before the vault changes.
 
     "kind is one of: edit | missing | request | question.
     """
@@ -296,11 +314,20 @@ def ask_librarian(question: str) -> str:
 
 @mcp.prompt()
 def file_feedback(kind: str, body: str, note_id: str = "") -> str:
-    """Queue vault feedback for librarian review (edit/missing/request)."""
+    """Teach the brain: queue feedback the librarian applies later."""
+    kinds = {
+        "edit": "correct something the vault gets wrong",
+        "missing": "note a gap and supply the content or where to find it",
+        "request": "ask the librarian to fetch or do something",
+        "question": "leave an open question for future retrieval",
+    }
+    hint = kinds.get(kind, "describe what the vault should learn")
     return (
         f"File this feedback with give_feedback(kind='{kind}', note_id='{note_id}'): {body}. "
-        "It lands in the capture queue as pending; the librarian reviews "
-        "(applied/approved/rejected) before anything touches the vault."
+        f"Purpose: {hint}. Either carry the information itself or say where "
+        "to get it — both teach the brain. It lands in the capture queue as "
+        "pending; the librarian reviews (applied/approved/rejected) before "
+        "anything touches the vault."
     )
 
 

@@ -60,6 +60,20 @@ admin:
   # Prompt name -> prompt note, e.g. { triage: admin/prompts/triage }.
   prompts: {}
 
+# Ask the librarian: one interactive agent run per question from the Ask page
+# (`POST /api/request`). Shaped like a job but with no schedule.
+ask:
+  # Off = the Ask page and `POST /api/request` refuse to run.
+  enabled: true
+  # Vault note scoping every answer, e.g. ask-policy. Null = no note.
+  instructions_file: null
+  # Restrict to these tool names; null = every enabled tool.
+  tools: null
+  # Restrict to these MCP servers; null = every enabled server.
+  mcp_servers: null
+  # Step budget override; null = the agent default.
+  max_steps: null
+
 scheduler:
   # OFF by default: the jobs below are disabled too, so the librarian never acts
   # on the vault unprompted. Turn this on (and enable a job) when you are ready.
@@ -87,27 +101,61 @@ mcp_servers:
     # verification anyone on the path can read and modify the traffic.
     insecure: false
 
-# Scheduled librarian runs. Exactly one of `every` (30m/4h/2d) or `cron` per job.
-# All disabled: these are the shapes worth having, not a schedule you agreed to.
+# Scheduled librarian runs. Exactly one of `every` (30m/4h/1d) or `cron` per job.
+# All disabled: a capture pipeline plus vault upkeep, not a schedule you agreed
+# to. The pipeline flows one way: audit files requests → triage rules on them
+# → apply incorporates the approved ones; layout tends the structure itself.
 jobs:
   - id: capture-triage
     name: Capture triage
+    description: 'Rule on pending capture entries: approve what is worth acting on, reject the rest.'
     enabled: false
     every: 4h
     instructions: |
-      Look at the pending capture queue. Group requests into actionable items,
-      apply the ones the vault instructions allow, and review every entry —
-      applied, approved or rejected. Never leave a request pending silently.
+      List the pending capture queue. For each entry, read the notes it concerns
+      and judge against the vault's current content and layout whether it is worth
+      acting on. Worth it → approved (capture-apply incorporates it later); not
+      worth it → rejected with the reason in the review note. Use approved or
+      rejected only — never applied, applying belongs to capture-apply. Never edit
+      the vault yourself, and never leave an entry pending silently.
+    tools: [list_capture, read_note, search_notes, review_capture]
 
-  - id: vault-sweep
-    name: Vault maintenance sweep
+  - id: capture-apply
+    name: Capture apply
+    description: 'Incorporate approved capture entries into the vault, then mark them applied.'
     enabled: false
-    cron: "0 3 */2 * *"
-    instructions_file: jobs/sweep.md
-    tools: [list_notes, read_note, search_notes, patch_note, move_note]
+    every: 1d
+    instructions: |
+      List the approved capture queue and group the entries by note. For each group,
+      decide from the entry content and the vault's current content and layout how
+      to incorporate it, apply the change with the note tools, then move the entry
+      to applied with review_capture — applied requires the written content, so pass
+      what you wrote. If an entry went stale or is wrong, reject it with the reason
+      instead. Never touch pending entries: triage owns those.
+    tools: [list_capture, read_note, search_notes, create_note, update_note, append_note, patch_note, move_note, review_capture]
 
-  - id: source-check
-    name: Source freshness
+  - id: vault-layout
+    name: Vault layout
+    description: 'Own the vault layout template: reshape notes and folders to match it as content evolves.'
     enabled: false
-    every: 6d
-    description: Re-check note sources and queue update requests.
+    cron: "0 3 * * 0"
+    instructions: |
+      Survey every note id and compare the layout against the vault layout template
+      (admin/templates/layout, when it exists) and the vault's current content.
+      Update the template itself when the content has outgrown it; create, update,
+      patch or move individual notes and folders so the whole vault follows it.
+      Never delete: file a capture request for removals or moves you are unsure of,
+      and let triage rule on it.
+    tools: [list_notes, read_note, search_notes, create_note, update_note, append_note, patch_note, move_note, give_feedback]
+
+  - id: vault-audit
+    name: Vault audit
+    description: 'Walk every note in turn and file a capture request for anything stale, wrong or missing.'
+    enabled: false
+    cron: "0 4 * * 6"
+    instructions: |
+      Walk every note in turn. For each one, consider whether it should be updated,
+      removed or changed — then file a capture request (edit, missing or request)
+      naming the note, what is wrong and where to get the right information. Never
+      edit the vault yourself: you propose, triage rules, apply incorporates.
+    tools: [list_notes, read_note, search_notes, give_feedback]

@@ -308,6 +308,31 @@ class JobSpec(BaseModel):
         return self
 
 
+class AskConfig(BaseModel):
+    """The interactive librarian: answering questions asked in the UI.
+
+    Shaped like a job (own instructions note, tool/server restrictions, step
+    budget) but with no schedule — one run per question, on demand. ``enabled``
+    gates the whole function: the Ask page and ``POST /api/request`` refuse
+    when it is off."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    """Off = the Ask page and ``POST /api/request`` refuse to run."""
+
+    instructions_file: str | None = None
+    """Vault note whose markdown scopes every answer (read at run time)."""
+
+    tools: list[str] | None = None
+    """Restrict to these tool names; ``None`` = every enabled tool."""
+
+    mcp_servers: list[str] | None = None
+    """Restrict to these MCP servers; ``None`` = every enabled server."""
+
+    max_steps: int | None = Field(default=None, ge=1, le=200)
+
+
 class SchedulerConfig(BaseModel):
     """How often the scheduler wakes to look for due jobs."""
 
@@ -321,42 +346,111 @@ class SchedulerConfig(BaseModel):
     """Never-run jobs are due immediately instead of after one interval."""
 
 
-#: The shipped schedule: the shapes worth having, all disabled. Mirrored by
-#: ``brain.example.yaml`` (a test keeps the two in step) so the settings view has
-#: something concrete to show on a fresh install instead of an empty list.
+#: The shipped schedule: a capture pipeline plus vault upkeep, all disabled.
+#: Mirrored by ``brain.example.yaml`` (a test keeps the two in step) so the
+#: settings view has something concrete to show on a fresh install instead of
+#: an empty list. The pipeline flows one way: audit files requests → triage
+#: rules on them → apply incorporates the approved ones; layout tends the
+#: structure itself. Each job only gets the tools its stage needs.
 _EXAMPLE_JOBS: tuple[dict[str, object], ...] = (
     {
         "id": "capture-triage",
         "name": "Capture triage",
+        "description": (
+            "Rule on pending capture entries: approve what is worth acting "
+            "on, reject the rest."
+        ),
         "enabled": False,
         "every": "4h",
         "instructions": (
-            "Look at the pending capture queue. Group requests into actionable "
-            "items, apply the ones the vault instructions allow, and review every "
-            "entry — applied, approved or rejected. Never leave a request pending "
-            "silently.\n"
+            "List the pending capture queue. For each entry, read the notes it "
+            "concerns and judge against the vault's current content and layout "
+            "whether it is worth acting on. Worth it → approved (capture-apply "
+            "incorporates it later); not worth it → rejected with the reason in "
+            "the review note. Use approved or rejected only — never applied, "
+            "applying belongs to capture-apply. Never edit the vault yourself, "
+            "and never leave an entry pending silently.\n"
         ),
+        "tools": ["list_capture", "read_note", "search_notes", "review_capture"],
     },
     {
-        "id": "vault-sweep",
-        "name": "Vault maintenance sweep",
+        "id": "capture-apply",
+        "name": "Capture apply",
+        "description": (
+            "Incorporate approved capture entries into the vault, then mark "
+            "them applied."
+        ),
         "enabled": False,
-        "cron": "0 3 */2 * *",
-        "instructions_file": "jobs/sweep.md",
+        "every": "1d",
+        "instructions": (
+            "List the approved capture queue and group the entries by note. "
+            "For each group, decide from the entry content and the vault's "
+            "current content and layout how to incorporate it, apply the "
+            "change with the note tools, then move the entry to applied with "
+            "review_capture — applied requires the written content, so pass "
+            "what you wrote. If an entry went stale or is wrong, reject it "
+            "with the reason instead. Never touch pending entries: triage "
+            "owns those.\n"
+        ),
+        "tools": [
+            "list_capture",
+            "read_note",
+            "search_notes",
+            "create_note",
+            "update_note",
+            "append_note",
+            "patch_note",
+            "move_note",
+            "review_capture",
+        ],
+    },
+    {
+        "id": "vault-layout",
+        "name": "Vault layout",
+        "description": (
+            "Own the vault layout template: reshape notes and folders to match "
+            "it as content evolves."
+        ),
+        "enabled": False,
+        "cron": "0 3 * * 0",
+        "instructions": (
+            "Survey every note id and compare the layout against the vault "
+            "layout template (admin/templates/layout, when it exists) and the "
+            "vault's current content. Update the template itself when the "
+            "content has outgrown it; create, update, patch or move individual "
+            "notes and folders so the whole vault follows it. Never delete: "
+            "file a capture request for removals or moves you are unsure of, "
+            "and let triage rule on it.\n"
+        ),
         "tools": [
             "list_notes",
             "read_note",
             "search_notes",
+            "create_note",
+            "update_note",
+            "append_note",
             "patch_note",
             "move_note",
+            "give_feedback",
         ],
     },
     {
-        "id": "source-check",
-        "name": "Source freshness",
+        "id": "vault-audit",
+        "name": "Vault audit",
+        "description": (
+            "Walk every note in turn and file a capture request for anything "
+            "stale, wrong or missing."
+        ),
         "enabled": False,
-        "every": "6d",
-        "description": "Re-check note sources and queue update requests.",
+        "cron": "0 4 * * 6",
+        "instructions": (
+            "Walk every note in turn. For each one, consider whether it should "
+            "be updated, removed or changed — then file a capture request "
+            "(edit, missing or request) naming the note, what is wrong and "
+            "where to get the right information. Never edit the vault "
+            "yourself: you propose, triage rules, apply incorporates.\n"
+        ),
+        "tools": ["list_notes", "read_note", "search_notes", "give_feedback"],
     },
 )
 
@@ -403,6 +497,7 @@ class BrainConfigDocument(BaseModel):
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
+    ask: AskConfig = Field(default_factory=AskConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
@@ -426,6 +521,9 @@ class BrainConfigDocument(BaseModel):
                 raise ValueError(
                     f"job {job.id!r}: unknown mcp server(s) {sorted(unknown)}"
                 )
+        ask_unknown = set(self.ask.mcp_servers or ()) - servers
+        if ask_unknown:
+            raise ValueError(f"ask: unknown mcp server(s) {sorted(ask_unknown)}")
         return self
 
     def redacted(self) -> dict[str, object]:

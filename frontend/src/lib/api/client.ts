@@ -144,6 +144,15 @@ export interface SchedulerConfig {
 	run_on_start: boolean;
 }
 
+/** One interactive librarian run per question — shaped like a job, no schedule. */
+export interface AskConfig {
+	enabled: boolean;
+	instructions_file: string | null;
+	tools: string[] | null;
+	mcp_servers: string[] | null;
+	max_steps: number | null;
+}
+
 /** Remote only: a local (stdio) MCP server would be shell access. */
 export type McpTransport = 'http' | 'sse';
 
@@ -181,6 +190,7 @@ export interface AdminConfig {
 export interface BrainConfigDoc {
 	agent: AgentConfig;
 	admin: AdminConfig;
+	ask: AskConfig;
 	scheduler: SchedulerConfig;
 	tools: Record<string, { enabled: boolean }>;
 	mcp_servers: MCPServerConfig[];

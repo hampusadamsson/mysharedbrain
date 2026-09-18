@@ -131,6 +131,13 @@ function payload(jobs: BrainConfigDoc['jobs'] = SHIPPED_JOBS): SettingsPayload {
 			templates: {},
 			prompts: {}
 		},
+		ask: {
+			enabled: true,
+			instructions_file: null,
+			tools: null,
+			mcp_servers: null,
+			max_steps: null
+		},
 		tools: { delete_note: { enabled: false } },
 		mcp_servers: [
 			{
@@ -587,6 +594,7 @@ describe('settings · tab in the url', () => {
 
 	it.each([
 		['agent', 'Agent'],
+		['ask', 'Ask'],
 		['jobs', 'Jobs'],
 		['tools', 'Tools'],
 		['mcp', 'MCP servers']
@@ -856,6 +864,92 @@ describe('settings · job instructions note', () => {
 		await expect
 			.element(page.getByLabelText('Instructions note for Capture triage'))
 			.toHaveValue('');
+	});
+});
+
+describe('settings · ask tab', () => {
+	it('shows the enable switch and the instructions picker', async () => {
+		await openTab('ask');
+
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Enable Ask the librarian' }))
+			.toBeChecked();
+		const field = page.getByLabelText('Instructions note for asking');
+		await expect.element(field).toHaveValue('');
+		await expect.element(field).toHaveAttribute('readonly');
+	});
+
+	it('toggles asking off', async () => {
+		await openTab('ask');
+
+		await page.getByRole('checkbox', { name: 'Enable Ask the librarian' }).click();
+
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Enable Ask the librarian' }))
+			.not.toBeChecked();
+	});
+
+	it('opens the picker and restricts tools like a job does', async () => {
+		api.search.mockResolvedValue({ names: ['ask-policy.md'], content: [] });
+		await openTab('ask');
+
+		await page.getByRole('button', { name: 'Choose…' }).click();
+		await page.getByLabelText('Search notes').fill('policy');
+		await expect.poll(() => api.search).toHaveBeenCalledWith('policy', 30, 0, false);
+		await page.getByRole('button', { name: 'ask-policy.md' }).click();
+		await expect
+			.element(page.getByLabelText('Instructions note for asking'))
+			.toHaveValue('ask-policy.md');
+
+		await page.getByRole('checkbox', { name: 'read_note' }).click();
+		await expect.element(page.getByRole('checkbox', { name: 'read_note' })).not.toBeChecked();
+	});
+});
+
+describe('settings · agent instructions note', () => {
+	it('shows the current note read-only, not as free text, with no inline textarea', async () => {
+		await openTab('agent');
+
+		const field = page.getByLabelText('Instructions note for the agent');
+		await expect.element(field).toHaveValue('librarian.md');
+		await expect.element(field).toHaveAttribute('readonly');
+		expect(document.body.textContent).not.toContain('Inline instructions');
+	});
+
+	it('opens a searchable picker and applies the chosen note', async () => {
+		api.search.mockResolvedValue({ names: ['librarian-v2.md'], content: [] });
+		await openTab('agent');
+
+		await page.getByRole('button', { name: 'Choose…' }).click();
+		await expect.element(page.getByLabelText('Search notes')).toBeVisible();
+		await page.getByLabelText('Search notes').fill('librarian');
+
+		await expect.poll(() => api.search).toHaveBeenCalledWith('librarian', 30, 0, false);
+		await page.getByRole('button', { name: 'librarian-v2.md' }).click();
+
+		await expect
+			.element(page.getByLabelText('Instructions note for the agent'))
+			.toHaveValue('librarian-v2.md');
+	});
+
+	it('clears the note without opening the picker', async () => {
+		await openTab('agent');
+
+		await page.getByRole('button', { name: 'Clear' }).click();
+
+		await expect.element(page.getByLabelText('Instructions note for the agent')).toHaveValue('');
+	});
+
+	it('explains how the agent note and job notes combine', async () => {
+		await openTab('agent');
+
+		await expect
+			.element(
+				page.getByText(
+					"Standing instructions for every run; a job's own instructions note is appended on top of these, not instead of them."
+				)
+			)
+			.toBeVisible();
 	});
 });
 

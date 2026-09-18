@@ -146,6 +146,16 @@ async def test_mcp_obsidian_parity_tools(vault_dir: Path) -> None:
     assert len(cast("list[object]", changes["changes"])) > 0
 
 
+async def test_mcp_instructions_describe_the_brain_and_its_feedback_loop() -> None:
+    """Clients read server instructions before touching tools: they must say
+    what the brain is for (gather/add/remove/edit information) and that
+    feedback is how it learns — filed notes, or where to fetch them, that the
+    librarian applies later."""
+    instructions = mcp.instructions or ""
+    for word in ("gather", "feedback", "capture", "librarian"):
+        assert word in instructions.lower(), f"instructions never mention {word!r}"
+
+
 async def test_mcp_resources_and_prompts(vault_dir: Path) -> None:
     from fastmcp import Client
 

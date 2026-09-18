@@ -52,8 +52,9 @@ def test_defaults_when_file_absent(config_file: Path) -> None:
     assert cfg.scheduler.enabled is False, "the librarian must not act unprompted"
     assert [job.id for job in cfg.jobs] == [
         "capture-triage",
-        "vault-sweep",
-        "source-check",
+        "capture-apply",
+        "vault-layout",
+        "vault-audit",
     ]
     assert all(not job.enabled for job in cfg.jobs), "shipped schedule is off"
 
@@ -81,7 +82,7 @@ def test_example_jobs_are_fresh_objects(config_file: Path) -> None:
     first.jobs[0].enabled = True
     first.jobs.pop()
     second = BrainConfig()
-    assert len(second.jobs) == 3
+    assert len(second.jobs) == 4
     assert second.jobs[0].enabled is False
 
 
@@ -128,6 +129,38 @@ def test_example_file_documents_the_admin_defaults(
         pytest.skip("brain.example.yaml not present")
     monkeypatch.setenv("BRAIN_CONFIG", str(example))
     assert load_config().admin == BrainConfig().admin
+
+
+def test_example_file_documents_the_ask_defaults(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    example = Path(__file__).resolve().parents[2] / "brain.example.yaml"
+    if not example.is_file():  # pragma: no cover - example lives at repo root
+        pytest.skip("brain.example.yaml not present")
+    monkeypatch.setenv("BRAIN_CONFIG", str(example))
+    assert load_config().ask == BrainConfig().ask
+
+
+def test_yaml_file_loads_the_ask_section(config_file: Path) -> None:
+    """The ask loop is configured from YAML, not UI-only."""
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "ask": {
+                    "enabled": False,
+                    "instructions_file": "ask-policy",
+                    "tools": ["read_note", "search_notes"],
+                    "max_steps": 10,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config()
+    assert cfg.ask.enabled is False
+    assert cfg.ask.instructions_file == "ask-policy"
+    assert cfg.ask.tools == ["read_note", "search_notes"]
+    assert cfg.ask.max_steps == 10
 
 
 def test_yaml_file_loads_admin_and_mcp_insecure(config_file: Path) -> None:

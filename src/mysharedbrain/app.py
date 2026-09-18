@@ -21,7 +21,9 @@ from pydantic import BaseModel
 
 from mysharedbrain import capture
 from mysharedbrain.api_settings import router as settings_router
+from mysharedbrain.ask import run_ask
 from mysharedbrain.audit import KINDS, LogStats
+from mysharedbrain.config import load_config
 from mysharedbrain.jobs import get_scheduler
 from mysharedbrain.service import librarian
 from mysharedbrain.vault import (
@@ -536,15 +538,18 @@ def create_app() -> FastAPI:
         "/api/request",
         response_model=AskOut,
         tags=["librarian"],
-        summary="Ask the librarian (misses are logged)",
+        summary="Ask the librarian (one agent run; misses are filed for review)",
     )
-    def ask_question(payload: QuestionIn) -> dict[str, object]:
-        answer = librarian().ask(payload.question)
+    async def ask_question(payload: QuestionIn) -> dict[str, object]:
+        cfg = load_config()
+        if not cfg.ask.enabled:
+            raise HTTPException(status_code=404, detail="ask the librarian is disabled")
+        answer = await run_ask(cfg, librarian(), payload.question)
         return {
             "found": answer.found,
             "question": answer.question,
             "note_ids": answer.note_ids,
-            "hits": [{"id": h.id, "excerpts": h.excerpts} for h in answer.hits],
+            "hits": [],
             "entry_id": answer.entry_id,
             "message": answer.message,
         }

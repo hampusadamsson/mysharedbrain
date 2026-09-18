@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Activity, FileText, Inbox, MessagesSquare, Settings } from '@lucide/svelte';
+	import {
+		Activity,
+		FileText,
+		Inbox,
+		MessageCircle,
+		MessagesSquare,
+		Settings
+	} from '@lucide/svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { buildTree } from '$lib/notes';
 	import { space } from '$lib/stores/space.svelte';
@@ -14,6 +21,7 @@
 	const NAV = [
 		{ href: '/', label: 'Pages', icon: FileText },
 		{ href: '/ask', label: 'Ask the librarian', icon: MessagesSquare },
+		{ href: '/feedback', label: 'Give feedback', icon: MessageCircle },
 		{ href: '/capture', label: 'Capture queue', icon: Inbox, badge: true },
 		{ href: '/activity', label: 'Activity', icon: Activity },
 		{ href: '/settings', label: 'Settings', icon: Settings }
@@ -69,5 +77,5 @@
 </div>
 
 <div class="border-t px-4 py-3">
-	<a href="/ask" class="text-[13px] text-blue-600 hover:underline">Give feedback</a>
+	<a href="/feedback" class="text-[13px] text-blue-600 hover:underline">Give feedback</a>
 </div>
