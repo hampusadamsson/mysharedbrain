@@ -14,7 +14,10 @@
 	bind:this={ref}
 	data-slot="card-header"
 	class={cn(
-		'group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)',
+		// Two columns (text | action) only from `sm` up: on a phone the action
+		// column squeezed the title/description into a sliver. Below `sm` the
+		// action drops to its own full-width row (see card-action.svelte).
+		'group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-description]:grid-rows-[auto_auto] sm:has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-(--card-spacing)',
 		className
 	)}
 	{...restProps}

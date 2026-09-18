@@ -660,10 +660,11 @@
 	</p>
 
 	<Tabs.Root value={tab} onValueChange={selectTab} class="mt-4">
-		<!-- The tab list is `inline-flex w-fit`, so it cannot shrink: on a 360px
-		     phone the five triggers overflow the page. Scroll it instead. -->
+		<!-- The tab list is `inline-flex w-fit` with a fixed height, so six
+		     triggers neither shrink nor wrap: on a phone the last one was cut
+		     off. Wrap them across lines below `sm`, keep the single row above. -->
 		<div class="-mx-1 overflow-x-auto px-1">
-			<Tabs.List>
+			<Tabs.List class="!h-auto w-full flex-wrap justify-start sm:!h-9 sm:w-fit sm:flex-nowrap">
 				<Tabs.Trigger value="agent">Agent</Tabs.Trigger>
 				<Tabs.Trigger value="ask">Ask</Tabs.Trigger>
 				<Tabs.Trigger value="jobs">Jobs</Tabs.Trigger>

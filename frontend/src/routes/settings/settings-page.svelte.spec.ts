@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import Settings from './+page.svelte';
+// Without the stylesheet the layout classes do nothing, so geometry assertions
+// below would pass vacuously (the entry sits one level up).
+import '../layout.css';
 import type { BrainConfigDoc, Settings as SettingsPayload } from '$lib/api/client';
 
 const api = vi.hoisted(() => ({
@@ -396,6 +399,51 @@ describe('settings · job mcp servers', () => {
 		await expect
 			.element(page.getByText(/read from the seed file \(nothing saved yet\)/))
 			.toBeVisible();
+	});
+});
+
+describe('settings · responsive card actions', () => {
+	/** Boxes of the action slot, description and header of one named card. */
+	function boxes(cardTitle: string) {
+		const card = [...document.querySelectorAll<HTMLElement>('[data-slot="card"]')].find((c) =>
+			c.querySelector('[data-slot="card-title"]')?.textContent?.includes(cardTitle)
+		);
+		if (!card) throw new Error(`card not found: ${cardTitle}`);
+		const header = card.querySelector<HTMLElement>('[data-slot="card-header"]');
+		const description = card.querySelector<HTMLElement>('[data-slot="card-description"]');
+		const action = card.querySelector<HTMLElement>('[data-slot="card-action"]');
+		if (!header || !description || !action) throw new Error(`incomplete card: ${cardTitle}`);
+		return {
+			header: header.getBoundingClientRect(),
+			description: description.getBoundingClientRect(),
+			action: action.getBoundingClientRect()
+		};
+	}
+
+	it('puts the action on its own row below the text on a phone', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o-mini\n');
+		await page.viewport(360, 900);
+		await openTab('config');
+
+		const { header, description, action } = boxes('Extract config');
+		// below the description, not beside it
+		expect(action.top).toBeGreaterThanOrEqual(description.bottom - 1);
+		// and using the card's full inner width so the buttons can wrap
+		expect(action.width).toBeGreaterThan(header.width * 0.7);
+	});
+
+	it('puts the action back in the top-right corner from sm up', async () => {
+		api.exportSettings.mockResolvedValue('agent:\n  model: openai:gpt-4o-mini\n');
+		await page.viewport(1280, 900);
+		await openTab('config');
+
+		const { header, description, action } = boxes('Extract config');
+		// beside the text (top row), on the right edge of the header
+		expect(action.top).toBeLessThan(description.bottom);
+		expect(action.left).toBeGreaterThan(description.left);
+		expect(Math.abs(action.right - (header.right - (description.left - header.left)))).toBeLessThan(
+			8
+		);
 	});
 });
 
