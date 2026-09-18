@@ -12,12 +12,26 @@ cannot impersonate another. Names map 1:1 to :data:`TOOLS` and to the
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from mysharedbrain.capture import Kind, Status, Verdict
+from pydantic_ai import ModelRetry
+
+from mysharedbrain.capture import (
+    EntryAlreadyReviewed,
+    EntryNotFound,
+    Kind,
+    Status,
+    Verdict,
+)
 from mysharedbrain.service import Librarian
+from mysharedbrain.vault import VaultError
+
+#: Bad arguments an agent can recover from: a wrong id, a heading that is not
+#: there, an unknown state. Retrying beats failing the run.
+_RETRYABLE = (VaultError, EntryNotFound, EntryAlreadyReviewed, ValueError)
 
 #: Everything a librarian tool is allowed to reach — notes, or the vault's own
 #: capture queue. Nothing here can leave the vault.
@@ -163,6 +177,27 @@ def _give_feedback(lib: Librarian) -> Callable[..., Any]:
     return give_feedback
 
 
+def _retryable(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Turn a domain error into a ``ModelRetry``.
+
+    The agent sees the message as the tool's result and gets another step to
+    correct itself; without this a single wrong id aborts the whole run (which
+    is what turned two recoverable mistakes into failed job runs).
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except _RETRYABLE as exc:
+            raise ModelRetry(
+                f"{exc} — check the arguments (note ids carry no .md suffix, "
+                "headings match their text) and try again"
+            ) from exc
+
+    return wrapper
+
+
 def _as_status(status: str | None) -> Status | None:
     if status is None:
         return None
@@ -175,7 +210,12 @@ _TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "list_notes", "List note ids (folder prefix filter)", "vault", _list_notes
     ),
-    ToolSpec("read_note", "Read a note's markdown", "vault", _read_note),
+    ToolSpec(
+        "read_note",
+        "Read a note's markdown (id has no .md suffix)",
+        "vault",
+        _read_note,
+    ),
     ToolSpec(
         "search_notes", "Search notes by name and content", "vault", _search_notes
     ),
@@ -184,7 +224,7 @@ _TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec("append_note", "Append markdown to a note", "vault", _append_note),
     ToolSpec(
         "patch_note",
-        "Replace/append a section under a heading",
+        "Replace/append a section under a heading (heading is the title text; a leading # is optional)",
         "vault",
         _patch_note,
     ),
@@ -223,7 +263,7 @@ def build_tools(
             raise ValueError(f"unknown tool(s) in job: {sorted(unknown)}")
     names = only if only is not None else list(TOOL_NAMES)
     return [
-        TOOLS[name].build(lib)
+        _retryable(TOOLS[name].build(lib))
         for name in names
         if name in TOOLS and enabled.get(name, True)
     ]

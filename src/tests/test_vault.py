@@ -220,6 +220,40 @@ def test_search_empty_query_returns_nothing(vault_dir: Path) -> None:
     assert vault.search_names("  ") == []
 
 
+def test_ids_accept_a_md_suffix(vault_dir: Path) -> None:
+    """Agents write note ids the way files are named; that must not 404."""
+    vault = Vault(vault_dir)
+    vault.create("admin/test.md", "body")
+    # one file, named once — not admin/test.md.md
+    assert (vault_dir / "admin" / "test.md").is_file()
+    assert vault.list_notes() == ["admin/test"]
+    assert vault.read("admin/test.md").content == "body"
+    assert vault.read("admin/test").content == "body"
+    vault.update("admin/test.md", "new")
+    assert vault.read("admin/test").content == "new"
+
+
+def test_ids_tolerate_surrounding_whitespace(vault_dir: Path) -> None:
+    vault = Vault(vault_dir)
+    vault.create("  spaced  ", "x")
+    assert vault.list_notes() == ["spaced"]
+
+
+def test_patch_accepts_a_heading_written_with_hashes(vault_dir: Path) -> None:
+    vault = Vault(vault_dir)
+    vault.create("doc", "## title 1\nold\n\n## other\nkeep\n")
+    for written in ("title 1", "# title 1", "## title 1", "  ## title 1  "):
+        vault.update("doc", "## title 1\nold\n\n## other\nkeep\n")
+        patched = vault.patch("doc", written, "new")
+        assert patched.content == "## title 1\nnew\n## other\nkeep\n", written
+
+
+def test_patch_keeps_hashes_inside_a_heading_name(vault_dir: Path) -> None:
+    vault = Vault(vault_dir)
+    vault.create("doc", "## C# setup\nold\n")
+    assert "new" in vault.patch("doc", "# C# setup", "new").content
+
+
 def test_append_adds_to_existing_note(vault_dir: Path) -> None:
     vault = Vault(vault_dir)
     vault.create("log", "first")

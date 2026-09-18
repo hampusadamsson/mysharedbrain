@@ -82,10 +82,17 @@ def split_frontmatter(content: str) -> tuple[dict[str, object], str]:
 
 
 def _validate(note_id: str) -> str:
-    """Normalise and validate a note id. Returns the POSIX relative path."""
+    """Normalise and validate a note id. Returns the POSIX relative path.
+
+    An id is a path without a suffix, but agents (and people) write it the way
+    the file is named — ``admin/test.md``. The trailing ``.md`` is stripped so
+    both spellings address the same note instead of failing a whole job run.
+    """
     if not note_id or not note_id.strip():
         raise InvalidNoteId("note id must not be empty")
     text = note_id.strip().replace("\\", "/")
+    if text.lower().endswith(NOTE_SUFFIX):
+        text = text[: -len(NOTE_SUFFIX)]
     if text.startswith("/"):
         raise InvalidNoteId(f"absolute paths are not allowed: {note_id!r}")
     parts = text.split("/")
@@ -205,7 +212,10 @@ class Vault:
         """
         if mode not in ("replace", "append"):
             raise ValueError(f"unknown patch mode: {mode!r}")
-        name = heading.strip()
+        # Tool callers pass the heading as it appears in the file ("## Setup");
+        # compare on the text, so the hashes are optional. Hashes inside a name
+        # ("C# setup") survive: only a leading run is removed.
+        name = heading.strip().lstrip("#").strip()
         if not name:
             raise ValueError("heading must not be empty")
         note = self.read(note_id)
