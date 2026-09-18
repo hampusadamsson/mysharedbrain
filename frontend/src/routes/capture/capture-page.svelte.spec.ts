@@ -84,6 +84,34 @@ describe('capture queue', () => {
 		expect(page.getByRole('button', { name: 'Approve', exact: true }).elements()).toHaveLength(0);
 	});
 
+	it('offers exactly one action on a pending entry: Approve', async () => {
+		respond([entry({ kind: 'edit', status: 'pending', automated: false })]);
+
+		await render(Capture);
+
+		// Approving is the only button; other states go through the State dropdown.
+		await expect.element(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+		// exact: the filter row has an 'Applied'/'Rejected' chip each
+		expect(page.getByRole('button', { name: 'Apply', exact: true }).elements()).toHaveLength(0);
+		expect(page.getByRole('button', { name: 'Reject', exact: true }).elements()).toHaveLength(0);
+		expect(page.getByRole('dialog').elements()).toHaveLength(0);
+
+		await page.getByRole('button', { name: 'Approve', exact: true }).click();
+		await expect.poll(() => api.reviewCapture).toHaveBeenCalledWith('e1', 'approved');
+	});
+
+	it('can still reject through the State dropdown', async () => {
+		respond([entry({ kind: 'edit', status: 'pending', automated: false })]);
+		api.setCaptureStatus.mockResolvedValue({ id: 'e1', status: 'rejected' });
+
+		await render(Capture);
+
+		await page.getByRole('button', { name: 'State for edit entry' }).click();
+		await page.getByRole('option', { name: 'Rejected' }).click();
+
+		await expect.poll(() => api.setCaptureStatus).toHaveBeenCalledWith('e1', 'rejected');
+	});
+
 	it('orders the filter buttons approved before applied', async () => {
 		await render(Capture);
 

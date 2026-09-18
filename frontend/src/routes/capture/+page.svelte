@@ -8,12 +8,10 @@
 	} from '$lib/api/client';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { timeAgo } from '$lib/notes';
-	import { refreshPending, refreshNotes } from '$lib/stores/space.svelte';
+	import { refreshPending } from '$lib/stores/space.svelte';
 	import { toast } from 'svelte-sonner';
 
 	const PAGE_SIZE = 20;
@@ -34,10 +32,6 @@
 	let total = $state(0);
 	let offset = $state(0);
 	let loading = $state(true);
-	let applyOpen = $state(false);
-	let applying = $state<FeedbackEntry | null>(null);
-	let applyContent = $state('');
-	let busy = $state(false);
 
 	async function load() {
 		loading = true;
@@ -76,7 +70,7 @@
 		}
 	}
 
-	function review(entry: FeedbackEntry, verdict: 'approved' | 'rejected') {
+	function review(entry: FeedbackEntry, verdict: 'approved') {
 		return async () => {
 			try {
 				await api.reviewCapture(entry.id, verdict);
@@ -87,43 +81,6 @@
 				toast.error(e instanceof Error ? e.message : String(e));
 			}
 		};
-	}
-
-	async function openApply(entry: FeedbackEntry) {
-		applying = entry;
-		if (!entry.note_id) {
-			applyContent = '';
-			applyOpen = true;
-			return;
-		}
-		let current: string;
-		try {
-			current = (await api.readNote(entry.note_id)).content;
-		} catch {
-			current = '';
-		}
-		const glue = current === '' ? '' : current.endsWith('\n') ? '\n' : '\n\n';
-		applyContent = `${current}${glue}${entry.body}\n`;
-		applyOpen = true;
-	}
-
-	async function applyFeedback() {
-		if (!applying || busy) return;
-		busy = true;
-		try {
-			const entry = applying;
-			await api.reviewCapture(entry.id, 'applied', 'ui', entry.note_id ? applyContent : null);
-			applyOpen = false;
-			applying = null;
-			await load();
-			await refreshPending();
-			await refreshNotes();
-			toast.success('Applied to the vault');
-		} catch (e) {
-			toast.error(e instanceof Error ? e.message : String(e));
-		} finally {
-			busy = false;
-		}
 	}
 </script>
 
@@ -190,9 +147,9 @@
 						</Select.Content>
 					</Select.Root>
 					{#if entry.status === 'pending'}
-						<Button size="sm" onclick={() => openApply(entry)}>Apply</Button>
-						<Button size="sm" variant="outline" onclick={review(entry, 'approved')}>Approve</Button>
-						<Button size="sm" variant="ghost" onclick={review(entry, 'rejected')}>Reject</Button>
+						<!-- One action: approving endorses the entry. Every other state
+						     (including Rejected) is the State control beside it. -->
+						<Button size="sm" onclick={review(entry, 'approved')}>Approve</Button>
 					{/if}
 				</div>
 			</li>
@@ -214,30 +171,3 @@
 		/>
 	</div>
 {/if}
-
-<Dialog.Root bind:open={applyOpen}>
-	<Dialog.Content class="sm:max-w-2xl">
-		<Dialog.Header>
-			<Dialog.Title>Apply feedback</Dialog.Title>
-			<Dialog.Description>
-				Review and edit, then apply to “{applying?.note_id ?? 'the vault'}”. Feedback: {applying?.body}
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if applying?.note_id}
-			<Textarea
-				bind:value={applyContent}
-				aria-label="Content to apply"
-				spellcheck="false"
-				class="min-h-64 font-mono text-xs"
-			></Textarea>
-		{:else}
-			<p class="text-sm text-muted-foreground">
-				This entry has no page — applying only records the verdict.
-			</p>
-		{/if}
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (applyOpen = false)}>Cancel</Button>
-			<Button onclick={applyFeedback} disabled={busy}>Apply to vault</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
