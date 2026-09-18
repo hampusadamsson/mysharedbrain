@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { api, ApiError, type Note } from '$lib/api/client';
-	import { renderMarkdown } from '$lib/markdown';
 	import { formatProperty, pageUrl, splitFrontmatter, tagList } from '$lib/notes';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import Markdown from '$lib/components/Markdown.svelte';
 	import NoteHistory from '$lib/components/NoteHistory.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -269,11 +269,7 @@
 		{:else if body.trim() === ''}
 			<p class="text-sm text-muted-foreground italic">Only properties — hit Edit to add content.</p>
 		{:else}
-			<article
-				class="wiki-body space-y-3 text-[15px] leading-relaxed [&_a]:text-blue-600 [&_a:hover]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:bg-muted [&_pre]:p-3 [&_table]:my-3 [&_td]:border [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-1.5"
-			>
-				{@html renderMarkdown(body)}
-			</article>
+			<Markdown content={body} />
 		{/if}
 
 		{#if backlinks.length > 0}

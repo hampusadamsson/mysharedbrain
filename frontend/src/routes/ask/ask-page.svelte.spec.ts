@@ -47,6 +47,52 @@ describe('ask the librarian', () => {
 		await expect.element(page.getByRole('link', { name: 'homelab' })).toBeVisible();
 	});
 
+	it('renders the answer as markdown', async () => {
+		api.ask.mockResolvedValue({
+			found: true,
+			question: 'k3s?',
+			note_ids: [],
+			hits: [],
+			entry_id: '',
+			message:
+				'## Answer\n\nThe node is **elitedesk**:\n\n- runs k3s\n- see [the note](/p/Test)\n\n```bash\nkubectl get nodes\n```'
+		});
+		await render(Ask);
+
+		await page.getByPlaceholder('What do you want to know?').fill('k3s?');
+		await page.getByRole('button', { name: 'Ask' }).click();
+
+		await expect.element(page.getByRole('heading', { name: 'Answer' })).toBeVisible();
+		await expect.element(page.getByText('elitedesk').first()).toBeVisible();
+		await expect.element(page.getByRole('listitem').first()).toHaveTextContent('runs k3s');
+		await expect
+			.element(page.getByRole('link', { name: 'the note' }))
+			.toHaveAttribute('href', '/p/Test');
+		// fenced code becomes a real block, not a raw paragraph
+		expect(document.querySelector('article.wiki-body pre code')).not.toBeNull();
+	});
+
+	it('sanitises the answer before rendering it', async () => {
+		api.ask.mockResolvedValue({
+			found: true,
+			question: 'x',
+			note_ids: [],
+			hits: [],
+			entry_id: '',
+			message: 'ok <script>window.__pwned = true</script> [x](javascript:alert(1))'
+		});
+		await render(Ask);
+
+		await page.getByPlaceholder('What do you want to know?').fill('x?');
+		await page.getByRole('button', { name: 'Ask' }).click();
+
+		await expect.element(page.getByText(/ok/).first()).toBeVisible();
+		const article = document.querySelector('article.wiki-body');
+		expect(article?.querySelector('script')).toBeNull();
+		expect(article?.innerHTML).not.toContain('javascript:');
+		expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+	});
+
 	it('spins while the run is in flight and reports the configured cap', async () => {
 		settings(true, 90);
 		let release: (answer: unknown) => void = () => {};

@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { refreshPending } from '$lib/stores/space.svelte';
 	import { pageUrl } from '$lib/notes';
+	import Markdown from '$lib/components/Markdown.svelte';
 	import { LoaderCircle } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -99,7 +100,8 @@
 
 {#if answer}
 	<div class="mt-4 rounded-lg border p-4">
-		<p class="text-sm">{answer.message}</p>
+		<!-- The agent answers in markdown; render it like a note body. -->
+		<Markdown content={answer.message} />
 		{#if answer.note_ids.length > 0}
 			<div class="mt-3 flex flex-wrap gap-2">
 				{#each answer.note_ids as id (id)}
