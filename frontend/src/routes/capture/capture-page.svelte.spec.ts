@@ -60,6 +60,57 @@ describe('capture queue', () => {
 		expect(page.getByText(/^automated$/).elements()).toHaveLength(0);
 	});
 
+	it('renders the body as compact markdown, not raw text', async () => {
+		respond([
+			entry({
+				body: 'First line\nSecond line\n\n- alpha\n- beta\n\nUse `kubectl` and **carefully**.'
+			})
+		]);
+
+		await render(Capture);
+
+		const article = document.querySelector('li article.wiki-body-compact');
+		expect(article).not.toBeNull();
+		// breaks: feedback is written as lines, so a single newline stays a break
+		expect(article?.querySelectorAll('br').length).toBeGreaterThanOrEqual(1);
+		expect(article?.querySelectorAll('li')).toHaveLength(2);
+		expect(article?.querySelector('strong')?.textContent).toBe('carefully');
+		expect(article?.querySelector('code')?.textContent).toBe('kubectl');
+	});
+
+	it('clamps a long body and expands it on request', async () => {
+		respond([entry({ body: 'Long feedback. '.repeat(30) })]);
+
+		await render(Capture);
+
+		const article = document.querySelector('li article.wiki-body-compact');
+		expect(article?.classList.contains('line-clamp-4')).toBe(true);
+
+		await page.getByRole('button', { name: 'Show more' }).click();
+		await expect
+			.poll(() => document.querySelector('li article')?.classList.contains('line-clamp-4'))
+			.toBe(false);
+		await expect.element(page.getByRole('button', { name: 'Show less' })).toBeVisible();
+	});
+
+	it('leaves a short body unclamped and without a toggle', async () => {
+		respond([entry({ body: 'fix the ip' })]);
+
+		await render(Capture);
+
+		const article = document.querySelector('li article.wiki-body-compact');
+		expect(article?.classList.contains('line-clamp-4')).toBe(false);
+		expect(page.getByRole('button', { name: /Show (more|less)/ }).elements()).toHaveLength(0);
+	});
+
+	it('shows review history only when there is some', async () => {
+		respond([entry({ status: 'approved', reviewer: 'curator', review_note: 'looks right' })]);
+
+		await render(Capture);
+
+		await expect.element(page.getByText('reviewed by curator · looks right')).toBeVisible();
+	});
+
 	it('requests the first page of pending work', async () => {
 		await render(Capture);
 

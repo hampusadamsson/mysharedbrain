@@ -9,12 +9,15 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
+	import Markdown from '$lib/components/Markdown.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { timeAgo } from '$lib/notes';
 	import { refreshPending } from '$lib/stores/space.svelte';
 	import { toast } from 'svelte-sonner';
 
 	const PAGE_SIZE = 20;
+	//: Bodies longer than this collapse to four lines with a Show more toggle.
+	const CLAMP_AT = 240;
 	// Tags read as metadata, not as controls: dim them so they never compete
 	// with the action buttons beside them.
 	const TAG = 'border-border/60 font-normal text-muted-foreground';
@@ -32,6 +35,7 @@
 	let total = $state(0);
 	let offset = $state(0);
 	let loading = $state(true);
+	let expanded = $state(new Set<string>());
 
 	async function load() {
 		loading = true;
@@ -68,6 +72,13 @@
 			toast.error(e instanceof Error ? e.message : String(e));
 			await load(); // put the control back to the stored state
 		}
+	}
+
+	function toggleExpanded(id: string) {
+		const next = new Set(expanded);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expanded = next;
 	}
 
 	function review(entry: FeedbackEntry, verdict: 'approved') {
@@ -109,8 +120,14 @@
 {:else}
 	<ul class="mt-4 max-w-3xl space-y-3">
 		{#each entries as entry (entry.id)}
-			<li class="rounded-lg border p-4">
-				<div class="flex flex-wrap items-center gap-2">
+			{@const long = entry.body.length > CLAMP_AT}
+			{@const open = expanded.has(entry.id)}
+			{@const meta = [entry.reviewer && `reviewed by ${entry.reviewer}`, entry.review_note]
+				.filter(Boolean)
+				.join(' · ')}
+			<li class="overflow-hidden rounded-lg border bg-card shadow-xs">
+				<!-- header: what it is, on which note, when -->
+				<div class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
 					<Badge variant="outline" class={TAG}>{feedbackKindLabel(entry.kind)}</Badge>
 					<Badge variant="outline" class={TAG}>{entry.status}</Badge>
 					{#if entry.automated}
@@ -119,14 +136,33 @@
 						>
 					{/if}
 					<span class="text-sm font-medium">{entry.note_id || 'general'}</span>
+					<span class="ml-auto text-xs whitespace-nowrap text-muted-foreground" title={entry.ts}>
+						{timeAgo(entry.ts)}
+					</span>
 				</div>
-				<p class="mt-2 text-sm whitespace-pre-wrap">{entry.body}</p>
-				<p class="mt-2 text-xs text-muted-foreground">
-					{timeAgo(entry.ts)}{entry.reviewer
-						? ` · reviewed by ${entry.reviewer}`
-						: ''}{entry.review_note ? ` · ${entry.review_note}` : ''}
-				</p>
-				<div class="mt-3 flex flex-wrap items-center gap-2">
+				<!-- body: markdown, compact, clamped until expanded -->
+				<div class="border-t px-3 py-2">
+					<Markdown
+						content={entry.body}
+						breaks
+						class="wiki-body-compact {long && !open ? 'line-clamp-4' : ''}"
+					/>
+					{#if long}
+						<button
+							type="button"
+							class="mt-1 text-xs font-medium text-blue-600 hover:underline"
+							aria-expanded={open}
+							onclick={() => toggleExpanded(entry.id)}
+						>
+							{open ? 'Show less' : 'Show more'}
+						</button>
+					{/if}
+				</div>
+				{#if meta}
+					<p class="border-t px-3 py-1.5 text-xs text-muted-foreground">{meta}</p>
+				{/if}
+				<!-- actions -->
+				<div class="flex flex-wrap items-center gap-2 border-t bg-muted/40 px-3 py-2">
 					<label class="text-xs text-muted-foreground" for="status-{entry.id}">State</label>
 					<Select.Root
 						type="single"

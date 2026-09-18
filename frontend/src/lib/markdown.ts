@@ -27,13 +27,18 @@ function installHook() {
 	});
 }
 
-/** Render markdown to sanitized HTML (safe to inject with {@html}). */
-export function renderMarkdown(src: string): string {
+/** Render markdown to sanitized HTML (safe to inject with {@html}).
+ *
+ * ``breaks`` turns single newlines into line breaks — right for feedback text
+ * that is written as lines, wrong for note bodies where a newline is just a
+ * soft wrap.
+ */
+export function renderMarkdown(src: string, breaks = false): string {
 	installHook();
 	const html = marked.parse(preprocessWikiLinks(src), {
 		async: false,
 		gfm: true,
-		breaks: false
+		breaks
 	}) as string;
 	return DOMPurify.sanitize(html, {
 		ADD_ATTR: ['data-target'],

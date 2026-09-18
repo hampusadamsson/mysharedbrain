@@ -223,4 +223,29 @@
 	.wiki-body :is(p, li, h1, h2, h3, h4, blockquote) {
 		overflow-wrap: anywhere;
 	}
+
+	/* Compact variant: dense surfaces (capture queue cards) that still want the
+	   same markdown semantics. Declared after .wiki-body so it wins. */
+	.wiki-body-compact {
+		font-size: 13.5px;
+		line-height: 1.5;
+	}
+	.wiki-body-compact > :where(* + *) {
+		margin-top: 0.5rem;
+	}
+	.wiki-body-compact :is(h1, h2, h3, h4) {
+		font-size: 0.95rem;
+	}
+	.wiki-body-compact :is(pre, code) {
+		font-size: 0.85em;
+	}
+	.wiki-body-compact pre {
+		padding: 0.5rem;
+	}
+	.wiki-body-compact :is(ul, ol) {
+		padding-left: 1.25rem;
+	}
+	.wiki-body-compact table {
+		font-size: 0.95em;
+	}
 }

@@ -5,12 +5,14 @@
 		/** Markdown source. Rendered through DOMPurify before it hits the DOM. */
 		content: string;
 		class?: string;
+		/** Keep single newlines as line breaks (feedback text, not note bodies). */
+		breaks?: boolean;
 	}
 
-	let { content, class: className = '' }: Props = $props();
+	let { content, class: className = '', breaks = false }: Props = $props();
 	// Typography lives in layout.css under `.wiki-body` (one place for every
-	// markdown surface: notes and the ask answer).
-	const html = $derived(renderMarkdown(content));
+	// markdown surface: notes, ask answers, capture feedback).
+	const html = $derived(renderMarkdown(content, breaks));
 </script>
 
 <article class="wiki-body {className}">
