@@ -1,0 +1,49 @@
+name: CodeQL
+
+# Code scanning: data-flow analysis of both halves of the app. This is the audit
+# that looks for exploitable paths in our own code, as opposed to the dependency
+# advisories (Lint → dependencies) and the workflow-security audit (zizmor).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "frontend/src/**"
+      - ".github/workflows/codeql.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "frontend/src/**"
+      - ".github/workflows/codeql.yml"
+  schedule:
+    - cron: "0 5 * * 1" # Mondays: catches advisories that appear later
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # to upload the SARIF results
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

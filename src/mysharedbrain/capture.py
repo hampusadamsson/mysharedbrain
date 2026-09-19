@@ -54,6 +54,18 @@ def check_status(value: str) -> Status:
 
 _COLUMNS = "id, ts, kind, body, note_id, status, reviewer, review_note, automated"
 
+# Statements as module constants, so the SQL text lives in one auditable place.
+# The only thing ever interpolated is this file's own column list (_COLUMNS,
+# a literal above); every value travels as a bound parameter. The B608 markers
+# below are bandit's heuristic firing on that literal interpolation.
+_INSERT = f"INSERT INTO capture_entries ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"  # nosec B608
+_SELECT = f"SELECT {_COLUMNS} FROM capture_entries"  # nosec B608
+_SELECT_ONE = f"{_SELECT} WHERE id = ?"
+_UPDATE_REVIEW = (
+    "UPDATE capture_entries SET status = ?, reviewer = ?, review_note = ? WHERE id = ?"
+)
+_SELECT_STATUS = "SELECT status FROM capture_entries WHERE id = ?"
+
 
 @dataclass
 class FeedbackEntry:
@@ -112,8 +124,7 @@ class CaptureQueue:
         )
         with self.db.transaction() as conn:
             conn.execute(
-                f"INSERT INTO capture_entries ({_COLUMNS})"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _INSERT,
                 (
                     entry.id,
                     entry.ts,
@@ -131,16 +142,14 @@ class CaptureQueue:
     def get(self, entry_id: str) -> FeedbackEntry | None:
         """One entry by id, or ``None``."""
         with self.db.connection() as conn:
-            row = conn.execute(
-                f"SELECT {_COLUMNS} FROM capture_entries WHERE id = ?", (entry_id,)
-            ).fetchone()
+            row = conn.execute(_SELECT_ONE, (entry_id,)).fetchone()
         return _entry(row) if row is not None else None
 
     def list_entries(
         self, status: Status | None = None, limit: int | None = None, offset: int = 0
     ) -> list[FeedbackEntry]:
         """Oldest-first. Filter by status, page with limit/offset when given."""
-        sql = f"SELECT {_COLUMNS} FROM capture_entries"
+        sql = _SELECT
         params: list[object] = []
         if status is not None:
             sql += " WHERE status = ?"
@@ -177,16 +186,10 @@ class CaptureQueue:
         if status not in STATUSES:
             raise ValueError(f"unknown status: {status!r}")
         with self.db.transaction() as conn:
-            row = conn.execute(
-                "SELECT status FROM capture_entries WHERE id = ?", (entry_id,)
-            ).fetchone()
+            row = conn.execute(_SELECT_STATUS, (entry_id,)).fetchone()
             if row is None:
                 raise EntryNotFound(f"capture entry not found: {entry_id!r}")
-            conn.execute(
-                "UPDATE capture_entries SET status = ?, reviewer = ?, review_note = ?"
-                " WHERE id = ?",
-                (status, reviewer, review_note, entry_id),
-            )
+            conn.execute(_UPDATE_REVIEW, (status, reviewer, review_note, entry_id))
         entry = self.get(entry_id)
         assert entry is not None  # just wrote it
         return entry
@@ -203,20 +206,14 @@ class CaptureQueue:
         if verdict not in ("applied", "approved", "rejected"):
             raise ValueError(f"unknown verdict: {verdict!r}")
         with self.db.transaction() as conn:
-            row = conn.execute(
-                "SELECT status FROM capture_entries WHERE id = ?", (entry_id,)
-            ).fetchone()
+            row = conn.execute(_SELECT_STATUS, (entry_id,)).fetchone()
             if row is None:
                 raise EntryNotFound(f"capture entry not found: {entry_id!r}")
             if row["status"] != "pending":
                 raise EntryAlreadyReviewed(
                     f"entry {entry_id!r} is already {row['status']}"
                 )
-            conn.execute(
-                "UPDATE capture_entries SET status = ?, reviewer = ?, review_note = ?"
-                " WHERE id = ?",
-                (verdict, reviewer, review_note, entry_id),
-            )
+            conn.execute(_UPDATE_REVIEW, (verdict, reviewer, review_note, entry_id))
         entry = self.get(entry_id)
         assert entry is not None  # just wrote it
         return entry

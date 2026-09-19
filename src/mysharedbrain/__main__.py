@@ -20,7 +20,13 @@ def main() -> None:
     if "--mcp" in sys.argv[1:]:
         mcp.run()
         return
-    uvicorn.run("mysharedbrain.app:app", host="0.0.0.0", port=8000)
+    # Binds all interfaces on purpose: this runs in a container and is only
+    # reachable through the cluster ingress.
+    uvicorn.run(
+        "mysharedbrain.app:app",
+        host="0.0.0.0",  # nosec B104
+        port=8000,
+    )
 
 
 if __name__ == "__main__":

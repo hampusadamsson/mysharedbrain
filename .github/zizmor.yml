@@ -13,6 +13,7 @@ rules:
       policies:
         actions/*: ref-pin
         docker/*: ref-pin
+        github/*: ref-pin # CodeQL, published by GitHub itself
         googleapis/*: ref-pin
         amannn/*: ref-pin
         astral-sh/*: ref-pin

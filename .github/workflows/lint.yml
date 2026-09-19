@@ -1,7 +1,12 @@
 name: Lint
 
-# The linters for the parts of the repo that ci-backend/ci-frontend do not see:
-# the workflows themselves, the scripts inside them, and the Dockerfile.
+# Linters and security audits for the parts of the repo that ci-backend and
+# ci-frontend do not cover: the workflows themselves, the shell inside them, the
+# Dockerfile, and the dependency/security posture of both packages.
+#
+# A weekly run is included because two of these checks (pip-audit, pnpm audit)
+# go stale without any commit: a CVE can be published against a dependency that
+# nothing has touched.
 on:
   pull_request:
     paths:
@@ -10,6 +15,11 @@ on:
       - ".github/zizmor.yml"
       - "Dockerfile"
       - ".hadolint.yaml"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "frontend/**"
+      - ".github/scripts/**"
   push:
     branches: [main]
     paths:
@@ -18,6 +28,13 @@ on:
       - ".github/zizmor.yml"
       - "Dockerfile"
       - ".hadolint.yaml"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "frontend/**"
+      - ".github/scripts/**"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, so advisories surface without a push
 
 permissions:
   contents: read
@@ -89,3 +106,62 @@ jobs:
         with:
           dockerfile: Dockerfile
           config: .hadolint.yaml
+
+  # Static analysis of the backend: the classes of mistake a linter for style
+  # will not look for (subprocess use, weak crypto, injected SQL, unsafe YAML).
+  # Medium and above fails; everything is reported.
+  bandit:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: bandit (medium and above)
+        run: |
+          set -euo pipefail
+          uvx bandit==1.9.1 -q -r src/mysharedbrain -ll
+
+  # Known vulnerabilities in the dependencies that actually ship. The Python
+  # side audits the resolved runtime set (what the image installs, --no-dev),
+  # not the dev tools.
+  dependencies:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: pip-audit the runtime dependency set
+        run: |
+          set -euo pipefail
+          uv export --no-dev --no-header --format requirements-txt \
+            | grep -v '^-e ' > /tmp/requirements.txt
+          uvx pip-audit==2.9.0 -r /tmp/requirements.txt --progress-spinner off
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: pnpm audit (high and above)
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm audit --audit-level high
