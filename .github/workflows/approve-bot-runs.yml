@@ -1,0 +1,44 @@
+name: Approve bot PR runs
+
+# Pull requests opened by a bot (release-please uses the workflow's GITHUB_TOKEN)
+# have their workflow runs parked in `action_required`: they wait for a human
+# click, so the release PR shows pending checks forever and every push to main
+# piles up another batch of them. The jobs are already skipped for those
+# branches by the guards in the other workflows — this just clears the queue.
+#
+# Dependabot PRs are not affected (their runs start on their own), so only
+# release-please branches are approved.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: approve-bot-runs
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve runs waiting on release-please pull requests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs?status=action_required&per_page=100" \
+            --jq '.workflow_runs[] | select(.head_branch | startswith("release-please--")) | [.id, .name] | @tsv' \
+          | while IFS=$'\t' read -r id name; do
+              [ -n "${id:-}" ] || continue
+              echo "approving ${name} (run ${id})"
+              gh api -X POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null \
+                || echo "  (not approvable any more — already decided)"
+            done
+          echo "no runs waiting" || true

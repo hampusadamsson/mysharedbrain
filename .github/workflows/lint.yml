@@ -39,6 +39,12 @@ on:
 permissions:
   contents: read
 
+# One run per branch and workflow: a newer commit makes the previous
+# run's answer irrelevant, and the queue is what shows up as noise.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Workflow schema, expressions, job graph, runner labels.
   actionlint:
