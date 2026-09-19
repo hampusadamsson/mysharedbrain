@@ -20,6 +20,9 @@ updates:
       time: "06:00"
       timezone: Europe/Stockholm
     open-pull-requests-limit: 5
+    # Keep PRs on top of main: a stale branch means the checks ran against
+    # code that has since moved (and a stale merge commit makes them useless).
+    rebase-strategy: auto
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -50,6 +53,9 @@ updates:
       time: "06:00"
       timezone: Europe/Stockholm
     open-pull-requests-limit: 5
+    # Keep PRs on top of main: a stale branch means the checks ran against
+    # code that has since moved (and a stale merge commit makes them useless).
+    rebase-strategy: auto
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -79,6 +85,9 @@ updates:
       time: "06:00"
       timezone: Europe/Stockholm
     open-pull-requests-limit: 5
+    # Keep PRs on top of main: a stale branch means the checks ran against
+    # code that has since moved (and a stale merge commit makes them useless).
+    rebase-strategy: auto
     commit-message:
       prefix: "chore(deps)"
     labels: [dependencies]
@@ -95,6 +104,9 @@ updates:
       time: "06:00"
       timezone: Europe/Stockholm
     open-pull-requests-limit: 5
+    # Keep PRs on top of main: a stale branch means the checks ran against
+    # code that has since moved (and a stale merge commit makes them useless).
+    rebase-strategy: auto
     commit-message:
       prefix: "chore(deps)"
     labels: [dependencies]
