@@ -5,6 +5,11 @@
 [![Lint](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/lint.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/lint.yml)
 [![CodeQL](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/codeql.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/codeql.yml)
 
+<!-- 944x1113 source; width is set here so GitHub does not scale it past the fold -->
+<p align="center">
+  <img src="1789799392416.png" alt="A badger reading a book" width="320">
+</p>
+
 A markdown vault with a librarian — an information system built for AI to read
 and write, where the writing is checked before it counts.
 
