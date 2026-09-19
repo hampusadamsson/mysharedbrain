@@ -1,0 +1,98 @@
+version: 2
+# Daily/weekly version updates for everything this repo actually ships with:
+# the uv backend, the pnpm frontend, the workflows themselves, and the base
+# images the Dockerfile builds on.
+#
+# Two deliberate choices:
+#   - commit-message prefixes are `chore(deps)` / `chore(deps-dev)`: our
+#     Conventional Commits vetting (commitlint + semantic PR title) then passes
+#     the bot's PRs, and `chore` releases nothing, so a dependency bump never
+#     becomes a release on its own.
+#   - minor/patch updates are grouped (one reviewable PR per ecosystem), while
+#     majors stay individual — a breaking bump deserves its own CI run and its
+#     own revert.
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Stockholm
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels: [dependencies]
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    groups:
+      # First match wins, so the narrower group goes first: otherwise the
+      # catch-all group below would swallow the dev dependencies too.
+      backend-dev-minor-patch:
+        dependency-type: development
+        patterns: ["*"]
+        update-types: [minor, patch]
+      backend-minor-patch:
+        dependency-type: production
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Stockholm
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels: [dependencies]
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+    groups:
+      # Dev first for the same reason as the backend: first match wins.
+      frontend-dev-minor-patch:
+        dependency-type: development
+        patterns: ["*"]
+        update-types: [minor, patch]
+      frontend-runtime-minor-patch:
+        dependency-type: production
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Stockholm
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies]
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Stockholm
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies]
+    groups:
+      base-images:
+        patterns: ["*"]
+        update-types: [minor, patch]

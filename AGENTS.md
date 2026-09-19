@@ -22,6 +22,10 @@ docs: document the capture review flow
   footer → major. `docs`/`refactor`/`test`/`ci`/`chore` release nothing on their
   own but still need a conventional header.
 - One logical change per commit; put the reasoning in the body, not the header.
+- Dependabot PRs arrive as `chore(deps): bump …` / `chore(deps-dev): …` so
+  they pass the same checks and never trigger a release. Minor/patch updates are
+  grouped into one PR per ecosystem (`.github/dependabot.yml`); majors come
+  alone. Merging one is a normal review: read the CI result, then merge.
 - Release PRs are opened automatically (`chore: release X.Y.Z`) and carry the
   version bump plus `CHANGELOG.md`. Merge it to release; the image is retagged
   `vX.Y.Z` by `.github/workflows/release-image.yml`.
