@@ -432,6 +432,62 @@ describe('settings · ask timeout', () => {
 	});
 });
 
+describe('settings · inline instructions', () => {
+	it("shows the agent's inline instructions and saves an edit", async () => {
+		const base = payload();
+		base.config.agent.instructions = 'Prefer short notes.';
+		api.getSettings.mockResolvedValue(base);
+		api.updateSettings.mockResolvedValue(base);
+		await openTab('agent');
+
+		const field = page.getByLabelText('Inline instructions for the agent');
+		await expect.element(field).toHaveValue('Prefer short notes.');
+
+		await field.fill('Prefer short notes. Never invent a source.');
+		await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect.poll(() => api.updateSettings).toHaveBeenCalled();
+		const sent = api.updateSettings.mock.calls.at(-1)?.[0] as BrainConfigDoc;
+		expect(sent.agent.instructions).toBe('Prefer short notes. Never invent a source.');
+	});
+
+	it('shows a job its inline instructions even when it has no note', async () => {
+		// the case that was invisible: text the run uses, no note to point at
+		const jobs = structuredClone(SHIPPED_JOBS);
+		jobs[0].instructions = 'Rule on the pending queue; never apply.';
+		jobs[0].instructions_file = null;
+		api.getSettings.mockResolvedValue(payload(jobs));
+		api.updateSettings.mockResolvedValue(payload(jobs));
+		await openJobs();
+
+		const field = page.getByLabelText('Inline instructions for Capture triage');
+		await expect.element(field).toHaveValue('Rule on the pending queue; never apply.');
+
+		await field.fill('Rule on the pending queue; never apply. Reject the rest.');
+		await page.getByRole('button', { name: 'Save' }).click();
+
+		await expect.poll(() => api.updateSettings).toHaveBeenCalled();
+		const sent = api.updateSettings.mock.calls.at(-1)?.[0] as BrainConfigDoc;
+		expect(sent.jobs[0].instructions).toContain('Reject the rest.');
+	});
+
+	it('offers note and inline text together, for a job that uses both', async () => {
+		const jobs = structuredClone(SHIPPED_JOBS);
+		jobs[1].instructions_file = 'admin/prompts/vault-sweep';
+		jobs[1].instructions = 'Keep the pass under ten minutes.';
+		api.getSettings.mockResolvedValue(payload(jobs));
+		await openJobs();
+
+		await expect
+			.element(page.getByLabelText('Instructions note for Vault maintenance sweep'))
+			.toHaveValue('admin/prompts/vault-sweep');
+		await expect
+			.element(page.getByLabelText('Inline instructions for Vault maintenance sweep'))
+			.toHaveValue('Keep the pass under ten minutes.');
+	});
+});
+
 describe('settings · responsive card actions', () => {
 	/** Boxes of the action slot, description and header of one named card. */
 	function boxes(cardTitle: string) {
@@ -985,13 +1041,15 @@ describe('settings · ask tab', () => {
 });
 
 describe('settings · agent instructions note', () => {
-	it('shows the current note read-only, not as free text, with no inline textarea', async () => {
+	it('picks the note (read-only field) and types the inline text beside it', async () => {
 		await openTab('agent');
 
+		// the note is chosen through the picker, never typed into
 		const field = page.getByLabelText('Instructions note for the agent');
 		await expect.element(field).toHaveValue('librarian.md');
 		await expect.element(field).toHaveAttribute('readonly');
-		expect(document.body.textContent).not.toContain('Inline instructions');
+		// the layer the run appends after that note is editable here
+		await expect.element(page.getByLabelText('Inline instructions for the agent')).toBeVisible();
 	});
 
 	it('opens a searchable picker and applies the chosen note', async () => {

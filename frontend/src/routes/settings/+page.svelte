@@ -859,6 +859,20 @@
 							of these, not instead of them.
 						</p>
 					</div>
+					<div class="grid gap-2 sm:col-span-2">
+						<Label for="agent-inline">Inline instructions</Label>
+						<Textarea
+							id="agent-inline"
+							bind:value={draft.agent.instructions}
+							aria-label="Inline instructions for the agent"
+							placeholder="Extra directions, appended after the note above"
+							class="min-h-28 text-[13px]"
+						></Textarea>
+						<p class="text-xs text-muted-foreground">
+							Appended after the note. Anything the librarian should be able to rewrite belongs in
+							the note; this text only ever changes here.
+						</p>
+					</div>
 				</Card.Content>
 			</Card.Root>
 
@@ -1164,6 +1178,20 @@
 									</Button>
 								{/if}
 							</div>
+						</div>
+						<div class="grid gap-2 sm:col-span-2">
+							<Label for="job-inline-{job.id}">Inline instructions</Label>
+							<Textarea
+								id="job-inline-{job.id}"
+								bind:value={job.instructions}
+								aria-label={`Inline instructions for ${job.name || job.id}`}
+								placeholder="Extra directions, appended after the note above"
+								class="min-h-28 text-[13px]"
+							></Textarea>
+							<p class="text-xs text-muted-foreground">
+								Appended after the note. With neither a note nor text, the description above is what
+								the run gets.
+							</p>
 						</div>
 						<div class="grid gap-2 sm:col-span-2">
 							<div class="flex flex-wrap items-baseline gap-2">
