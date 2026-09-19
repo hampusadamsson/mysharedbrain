@@ -1,0 +1,73 @@
+name: Conventional Commits
+
+# Vets the two things that decide the next release: every commit in a pull
+# request, and the pull request title (squash merges land as that title, so a
+# sloppy one would show up as a headerless line in the changelog and skip the
+# version bump). Pushes to main are reported but not blocked — the commit is
+# already public by then, and blocking would only turn main red after the fact.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint every commit in the pull request
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.mjs
+          failOnWarnings: true
+
+  pull-request-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Same shape as a commit header, since it becomes one on squash.
+          types: |
+            feat
+            fix
+            perf
+            revert
+            docs
+            refactor
+            test
+            build
+            ci
+            chore
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" should start lower-case, e.g.
+            "capture: format entries as compact cards".
+
+  # Informational on main: report non-conventional commits so they can be
+  # avoided next time, without failing a run whose commit already landed.
+  main-commits:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint the pushed commits
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.mjs

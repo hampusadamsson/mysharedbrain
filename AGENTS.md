@@ -4,6 +4,28 @@ TDD: write/extend tests first, then implement. `main` is always green:
 backend (`uv run pytest src/tests/ -q`, `ruff check`, `ruff format --check`,
 `basedpyright`) and frontend (`pnpm check`, `pnpm lint`, `pnpm test`).
 
+## Commits: Conventional Commits
+
+Every commit header is `type(scope): subject` — enforced by
+`.github/workflows/commitlint.yml` (and by release-please, which reads these to
+bump the version). Types: `feat`, `fix`, `perf`, `revert`, `docs`, `refactor`,
+`test`, `build`, `ci`, `chore`. Lower-case type and scope, no trailing period,
+header ≤ 100 chars, imperative subject.
+
+```
+feat(ask): spinner while the agent is thinking
+fix(vault): accept note ids written with a .md suffix
+docs: document the capture review flow
+```
+
+- `feat:` → minor bump, `fix:`/`perf:` → patch. `feat!:` or a `BREAKING CHANGE:`
+  footer → major. `docs`/`refactor`/`test`/`ci`/`chore` release nothing on their
+  own but still need a conventional header.
+- One logical change per commit; put the reasoning in the body, not the header.
+- Release PRs are opened automatically (`chore: release X.Y.Z`) and carry the
+  version bump plus `CHANGELOG.md`. Merge it to release; the image is retagged
+  `vX.Y.Z` by `.github/workflows/release-image.yml`.
+
 ## Commands
 
 ```bash

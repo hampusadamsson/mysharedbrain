@@ -1,0 +1,26 @@
+name: Release Please
+
+# Maintains a release PR from the conventional commits on main. Merging it
+# writes the version into pyproject.toml (and frontend/package.json), updates
+# CHANGELOG.md, tags vX.Y.Z and publishes the GitHub release — which is what
+# .github/workflows/release-image.yml turns into a versioned image tag.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
