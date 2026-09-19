@@ -39,7 +39,7 @@ jobs:
           sha="$(git rev-parse --short=7 "$tag^{commit}" 2>/dev/null || git rev-parse --short=7 HEAD)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "sha_tag=sha-$sha" >> "$GITHUB_OUTPUT"
-          echo "release $tag -> image $sha_tag"
+          echo "release $tag -> image sha-$sha"
 
       - name: Check the image exists
         id: have
