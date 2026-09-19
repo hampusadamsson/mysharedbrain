@@ -5,5 +5,13 @@
 # there turns every base-image rebuild into a broken build once that version
 # leaves the archive. The image's other properties — pinned base tags, no
 # package lists left in the layer — are still enforced.
+#
+# DL3066 (non-numeric USER) is off for a data reason, not a style one: the
+# running deployment's vault lives on a PVC whose files are owned by the
+# current `appuser` uid. Switching the image to a numeric uid without first
+# chowning that volume locks the app out of its own vault. The migration is:
+# note the uid in the running image, chown the PVC to a chosen numeric uid, then
+# switch `USER` to that number here.
 ignored:
   - DL3008
+  - DL3066
