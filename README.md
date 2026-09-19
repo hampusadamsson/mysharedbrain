@@ -15,6 +15,8 @@ and write, where the writing is checked before it counts.
 
 ## What it is
 
+It is a knowledge vault. a shared context.
+
 Notes are `.md` files in ordinary folders, flat or nested. A librarian agent
 reads them, answers questions from them, and files what it cannot answer. A web
 UI covers both sides: pages you can edit, and a queue of what the librarian wants
@@ -35,7 +37,7 @@ MySharedBrain maintains a wiki that holds that context:
 - **Context management.** Every entry is a page, every change is reviewed and
   attributed, and what the vault cannot answer stays visible as a queued
   question.
-- **One context, many readers.** Built-in MCP, REST API and a web UI read and
+- **A shared context.** Built-in MCP, REST API and a web UI read and
   write the same vault, so agents and people work from one source instead of
   each keeping a private copy that drifts.
 
