@@ -33,12 +33,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs?status=action_required&per_page=100" \
-            --jq '.workflow_runs[] | select(.head_branch | startswith("release-please--")) | [.id, .name] | @tsv' \
-          | while IFS=$'\t' read -r id name; do
-              [ -n "${id:-}" ] || continue
-              echo "approving ${name} (run ${id})"
-              gh api -X POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null \
-                || echo "  (not approvable any more — already decided)"
-            done
-          echo "no runs waiting" || true
+          # The push that triggers this also triggers release-please, whose PR
+          # update queues a fresh batch of runs *after* the first pass. So retry
+          # a few times rather than racing it; the schedule catches anything
+          # later.
+          for pass in 1 2 3; do
+            waiting="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs?status=action_required&per_page=100" \
+              --jq '.workflow_runs[] | select(.head_branch | startswith("release-please--")) | [.id, .name] | @tsv')"
+            if [ -z "$waiting" ]; then
+              echo "pass ${pass}: nothing waiting"
+            else
+              echo "pass ${pass}: $(printf '%s\n' "$waiting" | wc -l) run(s) waiting"
+              while IFS=$'\t' read -r id name; do
+                [ -n "${id:-}" ] || continue
+                echo "approving ${name} (run ${id})"
+                gh api -X POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null \
+                  || echo "  (not approvable any more — already decided)"
+              done <<< "$waiting"
+            fi
+            sleep 45
+          done
