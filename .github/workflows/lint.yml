@@ -118,6 +118,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
       - name: bandit (medium and above)
         run: |
           set -euo pipefail
