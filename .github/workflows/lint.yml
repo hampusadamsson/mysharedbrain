@@ -1,0 +1,91 @@
+name: Lint
+
+# The linters for the parts of the repo that ci-backend/ci-frontend do not see:
+# the workflows themselves, the scripts inside them, and the Dockerfile.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/dependabot.yml"
+      - ".github/zizmor.yml"
+      - "Dockerfile"
+      - ".hadolint.yaml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/dependabot.yml"
+      - ".github/zizmor.yml"
+      - "Dockerfile"
+      - ".hadolint.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  # Workflow schema, expressions, job graph, runner labels.
+  actionlint:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+
+      - name: actionlint
+        run: ./actionlint -color
+
+  # The shell inside `run:` blocks, which actionlint alone does not report.
+  shell:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: shellcheck the run blocks
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml" 2>/dev/null || pip install --quiet --disable-pip-version-check pyyaml
+          python3 .github/scripts/lint_workflow_shell.py
+
+  # Security audit of the workflows: injection into run blocks, credential
+  # persistence, over-broad permissions, unpinned actions (see .github/zizmor.yml
+  # for the tag-pin policy).
+  zizmor:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@v0.6.4
+        with:
+          version: 1.30.1
+          # Tag pins are allowed for the publishers named in .github/zizmor.yml;
+          # everything else must be hash-pinned.
+          config: .github/zizmor.yml
+          advanced-security: false
+
+  # Dockerfile smells (see .hadolint.yaml).
+  hadolint:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml

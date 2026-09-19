@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Lint every commit in the pull request
         uses: wagoid/commitlint-github-action@v6
@@ -74,6 +75,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Lint the pushed commits
         uses: wagoid/commitlint-github-action@v6

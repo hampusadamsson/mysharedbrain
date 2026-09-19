@@ -23,7 +23,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -37,10 +36,14 @@ jobs:
       extra_tag: ${{ steps.tag.outputs.extra_tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - id: tag
+        env:
+          REF: ${{ github.ref }}
         run: |
           echo "sha_tag=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$REF" = "refs/heads/main" ]; then
             echo "extra_tag=latest" >> "$GITHUB_OUTPUT"
           else
             echo "extra_tag=" >> "$GITHUB_OUTPUT"
@@ -49,6 +52,9 @@ jobs:
   # Single-arch amd64 build. Each job pushes by digest; `merge` tags it.
   build:
     needs: prepare
+    permissions:
+      contents: read
+      packages: write # pushed by digest
     # Bot PRs (release-please) would sit in action_required forever.
     if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     strategy:
@@ -61,6 +67,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -111,6 +119,9 @@ jobs:
   # Tag the single-arch digest with tags.
   merge:
     needs: [prepare, build]
+    permissions:
+      contents: read
+      packages: write # creates the tagged manifest
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

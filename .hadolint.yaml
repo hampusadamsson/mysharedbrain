@@ -1,0 +1,9 @@
+# hadolint configuration.
+#
+# DL3008 (pin apt package versions) is off on purpose: the runtime stage
+# installs ripgrep from the base image's own archive, and pinning a version
+# there turns every base-image rebuild into a broken build once that version
+# leaves the archive. The image's other properties — pinned base tags, no
+# package lists left in the layer — are still enforced.
+ignored:
+  - DL3008

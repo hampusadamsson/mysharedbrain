@@ -26,15 +26,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve the release tag and the commit it points at
         id: rel
+        env:
+          # Interpolating ${{ }} straight into a script runs whatever the value
+          # contains: a tag name is attacker-influenced text. env is data.
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
+          if [ "$EVENT" = "release" ]; then
+            tag="$RELEASE_TAG"
           else
-            tag="${{ inputs.tag }}"
+            tag="$INPUT_TAG"
           fi
           sha="$(git rev-parse --short=7 "$tag^{commit}" 2>/dev/null || git rev-parse --short=7 HEAD)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"

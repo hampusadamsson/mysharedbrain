@@ -1,0 +1,23 @@
+# zizmor configuration.
+#
+# Tag pins (`@v4`) are this repo's convention and what Dependabot maintains —
+# `unpinned-uses` is therefore a policy decision here, not an oversight: the
+# owners below are trusted to keep moving tags, everyone else must be
+# hash-pinned. Every other audit stays at its default severity, so the checks
+# that caught real problems while this was written (template injection into
+# `run:` blocks, credential persistence through artifacts, over-broad
+# permissions) still fail the build.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        actions/*: ref-pin
+        docker/*: ref-pin
+        googleapis/*: ref-pin
+        amannn/*: ref-pin
+        astral-sh/*: ref-pin
+        pnpm/*: ref-pin
+        wagoid/*: ref-pin
+        hadolint/*: ref-pin
+        zizmorcore/*: ref-pin
+        "*": hash-pin
