@@ -49,6 +49,8 @@ jobs:
   # Single-arch amd64 build. Each job pushes by digest; `merge` tags it.
   build:
     needs: prepare
+    # Bot PRs (release-please) would sit in action_required forever.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     strategy:
       fail-fast: false
       matrix:

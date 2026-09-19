@@ -20,6 +20,8 @@ defaults:
 
 jobs:
   lint-and-typecheck:
+    # Bot PRs (release-please) would sit in action_required forever.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +47,8 @@ jobs:
         run: pnpm lint
 
   test:
+    # Bot PRs (release-please) would sit in action_required forever.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +74,8 @@ jobs:
         run: pnpm test
 
   build:
+    # Bot PRs (release-please) would sit in action_required forever.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
