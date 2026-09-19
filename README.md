@@ -22,33 +22,27 @@ to change in them.
 
 ## What problem it solves
 
-An AI answer is plausible before it is true. The usual failure is **slop**:
-fluent, confident text that says little and cannot be traced or corrected. It
-reads fine in a chat window and it reads fine in a wiki, which is the danger —
-once it is written down, nobody can tell it apart from something verified.
+**Context.** An agent can be excellent at the work and still fail, because what
+it was given is outdated, incomplete or simply gone. People fare no better: the
+document is two years old, the note no longer matches reality, and nobody knows
+which page is current. Capability is not the bottleneck — context is.
 
-MySharedBrain puts the vault between the model and the reader:
+MySharedBrain maintains a wiki that holds that context:
 
-- **Answers come from pages.** A claim either has a page or it does not; there is
-  no third option where the model sounds sure.
-- **A miss is filed, not invented.** The librarian queues it (a `question`
-  entry) instead of filling the gap, so the unknown stays visible.
-- **Nothing lands unreviewed.** The capture queue is the gate: entries are
-  `edit`, `missing`, `request` or `question`, and a reviewer applies, approves or
-  rejects each one before it touches the vault.
-- **Every change is attributed.** The audit log records the actor — `api`,
-  `mcp`, `curator` or `librarian` — so a machine edit is never mistaken for
-  yours.
-- **The house style is plain, and it is written down.** The librarian's
-  instructions are a markdown page you own, so the style is a thing you edit
-  rather than a default you hope for — and the reviewer applies the same
-  standard to every queued entry: awkward, flowery, vague, unnecessary or
-  illogical wording, and the always-flag AI-isms — em dashes, semicolons,
-  arrows, inline bullets, "not X, it's Y", passive voice, imperative titles,
-  slogans.
+- **Automated update.** A librarian agent reads and writes the vault, so
+  documents get corrected instead of rotting and gaps get filed instead of
+  filled with guesses.
+- **Context management.** Every entry is a page, every change is reviewed and
+  attributed, and what the vault cannot answer stays visible as a queued
+  question.
+- **One context, many readers.** Built-in MCP, REST API and a web UI read and
+  write the same vault, so agents and people work from one source instead of
+  each keeping a private copy that drifts.
 
-The test for any of it is one question: *could this be rewritten significantly
-better?* If yes, it belongs in the queue, not in the vault.
+It is built to manage shared context for the many: several agents and humans on
+the same facts, where correcting something once corrects it for everyone — and
+where machine-written text is plausible before it is true, which is why nothing
+lands unreviewed.
 
 ## Quick start
 
@@ -105,24 +99,6 @@ Its reach is bounded on purpose: no shell, no local (`stdio`) MCP servers, no
 multi-user auth. The tools it may use are vault notes, the capture queue, and
 whichever remote MCP servers you enable — never more than a human reviewer has.
 
-## MCP tools
-
-| Tool | Description |
-| ---- | ----------- |
-| `create_note` · `read_note` · `read_notes` | Create, read, batch-read |
-| `update_note` · `append_note` · `patch_note` | Rewrite, append, replace a section under a heading |
-| `delete_note` · `restore_note` · `move_note` | Soft-delete to trash, restore, move |
-| `list_notes` · `list_directory` | List ids, or one folder's children |
-| `search_notes` · `search_by_tag` | Search names and content, or by frontmatter tag |
-| `get_frontmatter` · `set_frontmatter` | Read or merge YAML frontmatter |
-| `get_backlinks` · `get_outgoing` | `[[Link]]` neighbours |
-| `recent_changes` · `note_history` | Audited changes, whole vault or one note |
-| `give_feedback` | Queue an edit, missing info, a request or a question |
-| `ask_question` | Ask the librarian; a miss files a `question` |
-
-Plus resources (`vault://<id>`, `vault://index`) and prompts (`ask_librarian`,
-`file_feedback`). Configuration stays out of MCP: it lives in the UI.
-
 ## Configuration
 
 One config document drives the agent, its tools, MCP servers and jobs. Copy
@@ -176,12 +152,40 @@ outside it.
 
 ## API
 
-Interactive docs at **`/docs`** (and `/redoc`, `/openapi.json`); MCP tools mirror
-every route. Notes `POST/GET/PUT/DELETE/PATCH /api/notes…` (+ `/move`, `/append`,
-`/batch`, `/restore`), `GET /api/notes/{id}/history`, `GET /api/browse`,
-`GET /api/search?q=`, `POST /api/feedback`, `GET /api/capture`,
-`POST /api/capture/{id}/review`, `PUT /api/capture/{id}/status`,
-`POST /api/request`, `GET /api/audit`, `GET|PUT /api/settings…`, `GET /health`.
+Two interfaces over the same vault: **REST** for anything HTTP, **MCP** for
+agents. Every MCP tool maps to a route, so a client can reach the vault either
+way. The reverse has deliberate exceptions, listed below: configuration and
+queue moderation stay HTTP/UI-only, because an agent that could rewrite its own
+settings or approve its own queue entries would be checking its own work.
+
+- **REST docs:** `/docs` on a running instance — Swagger UI generated from the
+  app, so it is never out of date — plus `/redoc` and `/openapi.json`.
+- **MCP:** stdio (`uv run mysharedbrain --mcp`), with tools, resources
+  (`vault://<id>`, `vault://index`) and prompts (`ask_librarian`,
+  `file_feedback`).
+
+| Task | REST | MCP |
+| ---- | ---- | --- |
+| Check it is up | `GET /health` | — |
+| List pages | `GET /api/notes` (prefix, limit, offset) | `list_notes` |
+| Read a page / several | `GET /api/notes/{id}`, `POST /api/notes/batch` | `read_note`, `read_notes` |
+| Create a page | `POST /api/notes` | `create_note` |
+| Replace a page | `PUT /api/notes/{id}` | `update_note` |
+| Append | `POST /api/notes/{id}/append` | `append_note` |
+| Replace a section | `PATCH /api/notes/{id}` | `patch_note` |
+| Delete / restore | `DELETE /api/notes/{id}`, `POST …/restore` | `delete_note`, `restore_note` |
+| Move or rename | `POST /api/notes/{id}/move` | `move_note` |
+| Browse a folder | `GET /api/browse?prefix=` | `list_directory` |
+| Search names + content | `GET /api/search?q=` | `search_notes` |
+| Search by tag | `GET /api/tags/{tag}` | `search_by_tag` |
+| Read / merge frontmatter | `GET`, `PUT /api/notes/{id}/meta` | `get_frontmatter`, `set_frontmatter` |
+| Links in / out | `GET …/outgoing`, `GET …/backlinks` | `get_outgoing`, `get_backlinks` |
+| One page's history | `GET /api/notes/{id}/history` | `note_history` |
+| Recent changes | `GET /api/audit` (kind, limit, offset) | `recent_changes` |
+| File feedback | `POST /api/feedback` | `give_feedback` |
+| Ask the librarian | `POST /api/request` | `ask_question` |
+| Review the queue | `GET /api/capture`, `POST …/review`, `PUT …/status` | — (UI, or the librarian's own tools) |
+| Settings, checks, jobs | `GET`/`PUT /api/settings`, `/export`, `/import`, `/providers`, `/model/test`, `/mcp/test`, `/jobs/{id}/run`, `/jobs/{id}/runs` | — (UI) |
 
 ## Deploy and develop
 
