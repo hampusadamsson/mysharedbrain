@@ -4,6 +4,7 @@
 	import { ApiError, api, type Note } from '$lib/api/client';
 	import { Button } from '$lib/components/ui/button';
 	import NoteView from '$lib/components/NoteView.svelte';
+	import VaultBrowser from '$lib/components/VaultBrowser.svelte';
 	import { refreshNotes } from '$lib/stores/space.svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -82,23 +83,10 @@
 		<span class="mx-1.5">/</span>
 		{id}
 	</div>
-	<h1 class="mt-1 mb-4 text-2xl font-semibold tracking-tight">{id.split('/').pop()}</h1>
-	<ul class="divide-y rounded-lg border">
-		{#each folder.folders as sub (sub)}
-			<li>
-				<a href={`/p/${sub}`} class="block px-4 py-3 font-medium text-blue-600 hover:bg-muted">
-					📁 {sub.split('/').pop()}
-				</a>
-			</li>
-		{/each}
-		{#each folder.notes as entry (entry)}
-			<li>
-				<a href={`/p/${entry}`} class="block px-4 py-3 font-medium text-blue-600 hover:bg-muted">
-					📄 {entry.split('/').pop()}
-				</a>
-			</li>
-		{/each}
-	</ul>
+	<h1 class="mt-1 mb-4 text-2xl font-semibold tracking-tight">
+		{id.split('/').pop() ?? id}
+	</h1>
+	<VaultBrowser folders={folder.folders} notes={folder.notes} />
 {:else if missing}
 	<h1 class="text-2xl font-semibold tracking-tight">Page not found</h1>
 	<p class="mt-2 text-sm text-muted-foreground">
