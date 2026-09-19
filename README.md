@@ -1,8 +1,33 @@
 # MySharedBrain
 
-[![CI Backend](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml)
-[![CI Frontend](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml)
-[![Docker Build & Push](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml)
+<!-- Checks -->
+[![CI (Backend)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-backend.yml)
+[![CI (Frontend)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/ci-frontend.yml)
+[![Lint](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/lint.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/lint.yml)
+[![CodeQL](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/codeql.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/codeql.yml)
+[![Conventional Commits](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/commitlint.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/commitlint.yml)
+
+<!-- Delivery -->
+[![Docker Build & Push](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/docker.yml)
+[![Release Please](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/release-please.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/release-please.yml)
+[![Tag release image](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/release-image.yml/badge.svg?branch=main&event=push)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/release-image.yml)
+[![Dependabot Updates](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/hampusadamsson/mysharedbrain/actions/workflows/dependabot/dependabot-updates)
+
+### Workflows
+
+Every badge above is one workflow; the jobs are the batches inside it.
+
+| Workflow | Jobs | Runs on |
+| -------- | ---- | ------- |
+| [CI (Backend)](.github/workflows/ci-backend.yml) | `lint-and-typecheck` (ruff, basedpyright) · `test` (pytest) | `src/**`, `pyproject.toml`, `uv.lock` |
+| [CI (Frontend)](.github/workflows/ci-frontend.yml) | `lint-and-typecheck` (svelte-check, prettier, eslint) · `test` (vitest browser) · `build` (adapter-static) | `frontend/**` |
+| [Lint](.github/workflows/lint.yml) | `actionlint` · `shell` (shellcheck in run blocks) · `zizmor` · `hadolint` · `bandit` · `dependencies` (pip-audit, pnpm audit) | workflows, Dockerfile, `src/**`, `uv.lock`, `frontend/**`; weekly |
+| [CodeQL](.github/workflows/codeql.yml) | `analyze` (python, javascript-typescript; `security-and-quality`) | `src/**`, `frontend/src/**`; weekly |
+| [Conventional Commits](.github/workflows/commitlint.yml) | `commits` · `pull-request-title` · `main-commits` (informational) | pull requests; pushes to `main` |
+| [Docker Build & Push](.github/workflows/docker.yml) | `prepare` (tags) · `build` (per-arch, native runners) · `merge` (manifest) | `src/**`, `frontend/**`, `Dockerfile` |
+| [Release Please](.github/workflows/release-please.yml) | `release-please` — maintains the release PR from conventional commits | pushes to `main` |
+| [Tag release image](.github/workflows/release-image.yml) | `tag` — copies the release commit's image to `vX.Y.Z` | published releases |
+| [Dependabot Updates](.github/dependabot.yml) | one batch per ecosystem: `uv`, `npm` (frontend), `github-actions`, `docker` | weekly |
 
 An information management system meant for AI. A fully fledged markdown vault
 wiki: view it as a wiki in the web UI, CRUD any page, move notes, search by
