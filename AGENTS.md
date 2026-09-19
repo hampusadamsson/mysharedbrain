@@ -95,7 +95,7 @@ list). Each built-in tool declares a `scope` — `vault` or `capture`, the latte
 being the vault's own `.brain/brain.db` — and a test fails if a tool declares
 anything else. The only `subprocess` call in the codebase is ripgrep search, with
 an argument list and `--`, never `shell=True`. The shipped defaults are the same
-three **disabled** jobs as `brain.example.yaml`, with `scheduler.enabled: false`,
+four **disabled** jobs as `brain.example.yaml`, with `scheduler.enabled: false`,
 so nothing runs unprompted and Settings → Jobs still shows the intended shapes. `jobs.py` schedules runs (interval or cron) and
 records them in sqlite; every mutation the agent makes is audited under the
 `LIBRARIAN_ACTOR` (`librarian`) actor, and each run adds one summary audit entry
@@ -115,7 +115,7 @@ Settings storage: `BrainConfigDocument` is the schema (a plain model — validat
 a *body* must not consult sources, which was a real bug when the schema and the
 layering shared one class), and `BrainConfig` adds the layers: env > database >
 seed file > defaults. `settings_store.SettingsStore` owns the single-row
-`settings` table; `brain.yaml` is only ever read, and `config.save_config()` now
+`settings` table; `brain.yaml` is only ever read, and writes go to the settings row
 raises, as a tripwire against a second source of truth reappearing.
 
 Connection checks: `agent.check_mcp_server` and `agent.check_model` both return

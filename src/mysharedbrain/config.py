@@ -1,16 +1,19 @@
 """Brain configuration: one Pydantic model for agent, tools, MCP and jobs.
 
-Single source of truth, loaded from YAML (``$BRAIN_CONFIG``, default
-``brain.yaml``) with environment override on top — so a container can ship a
-committed file and inject secrets/config via configmap or env:
+One document drives the agent, its tools, the MCP servers and the jobs. Layers,
+lowest to highest: **defaults → seed file → saved settings → environment**.
+
+- the seed file is ``$BRAIN_CONFIG`` (default ``brain.yaml``) and is only ever
+  read — see ``brain.example.yaml`` for the shipped defaults;
+- saved settings live in the vault database (``.brain/brain.db``) and are what
+  the settings page writes, so there is no file to half-write;
+- the environment always wins, so a container can inject a secret and pin
+  values regardless of what was saved:
 
     BRAIN__AGENT__MODEL=openai:gpt-4o
     BRAIN__AGENT__API_KEY=sk-…
 
-Precedence: defaults < YAML file < environment. Writes go through
-:func:`save_config` (atomic replace), which is how the settings UI persists
-changes. Secrets are never returned by the API — :meth:`BrainConfig.redacted`
-blanks them.
+Secrets are never returned by the API — :meth:`BrainConfig.redacted` blanks them.
 """
 
 from __future__ import annotations
@@ -506,7 +509,6 @@ class BrainConfigDocument(BaseModel):
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     jobs: list[JobSpec] = Field(default_factory=default_jobs)
-    metadata: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check_jobs(self) -> BrainConfigDocument:
@@ -653,15 +655,3 @@ def export_config_yaml(
     data = config.redacted() if redact else config.model_dump(mode="json")
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
-
-def save_config(config: BrainConfigDocument, path: Path | None = None) -> None:
-    """Rejected: settings are stored in the vault database, not in a file.
-
-    Kept as a tripwire so an old call site fails loudly instead of silently
-    writing a second source of truth next to the database.
-    """
-    raise RuntimeError(
-        "save_config() was removed: settings live in the vault database "
-        "(see mysharedbrain.settings_store.SettingsStore). The YAML file is only "
-        "ever read, as a seed."
-    )

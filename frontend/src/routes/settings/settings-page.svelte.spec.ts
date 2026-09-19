@@ -161,8 +161,7 @@ function payload(jobs: BrainConfigDoc['jobs'] = SHIPPED_JOBS): SettingsPayload {
 				insecure: false
 			}
 		],
-		jobs,
-		metadata: {}
+		jobs
 	};
 	return {
 		config,

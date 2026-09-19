@@ -197,7 +197,6 @@ export interface BrainConfigDoc {
 	tools: Record<string, { enabled: boolean }>;
 	mcp_servers: MCPServerConfig[];
 	jobs: JobSpec[];
-	metadata: Record<string, string>;
 }
 
 export interface JobStatus {

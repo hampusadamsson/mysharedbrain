@@ -5,9 +5,12 @@
 #   BRAIN__AGENT__MODEL=openai:gpt-4o
 #   BRAIN__AGENT__API_KEY=sk-…        # injected from a secret, never committed
 #
-# The settings page in the UI edits this same file. The schedule below is the
-# shipped default: three disabled examples, so nothing runs on its own until you
-# turn it on deliberately.
+# This file is a seed: it applies until the settings page saves a config, which
+# goes into the vault database (VAULT_DIR/.brain/brain.db) and takes over. Delete
+# that row to hand control back to this file.
+#
+# The schedule below is the shipped default: four disabled examples, so nothing
+# runs on its own until you turn it on deliberately.
 
 agent:
   # Pydantic-AI model string; the provider must be installed.
@@ -73,6 +76,9 @@ ask:
   mcp_servers: null
   # Step budget override; null = the agent default.
   max_steps: null
+  # Give up on one question after this long (5-600); the Ask page spins until
+  # then and reports the timeout.
+  timeout_seconds: 60
 
 scheduler:
   # OFF by default: the jobs below are disabled too, so the librarian never acts
