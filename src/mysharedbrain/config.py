@@ -22,7 +22,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, get_args, get_origin
 
 import yaml
 from croniter import croniter
@@ -546,33 +546,68 @@ class BrainConfigDocument(BaseModel):
         return data
 
 
-def _known_fields(model: type[BaseModel], document: dict[str, Any]) -> dict[str, Any]:
+def _prune(annotation: object, value: object) -> object:
+    """Recurse into nested models, and into mappings and lists of them.
+
+    ``dict[str, ToolConfig]`` is pruned *per value* — those keys are user data
+    (tool names), not field names — which is why containers are handled before
+    the plain-model case.
+    """
+    plain: object = value  # returned as-is; `value` narrows below
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is dict and isinstance(value, dict) and len(args) == 2:
+        inner = args[1]
+        if isinstance(inner, type) and issubclass(inner, BaseModel):
+            pruned: dict[str, object] = {}
+            for key, item in cast("dict[str, object]", value).items():
+                pruned[key] = (
+                    _known_fields(inner, cast("dict[str, object]", item))
+                    if isinstance(item, dict)
+                    else item
+                )
+            return pruned
+        return plain
+    if origin is list and isinstance(value, list) and len(args) == 1:
+        inner = args[0]
+        if isinstance(inner, type) and issubclass(inner, BaseModel):
+            items: list[object] = []
+            for item in cast("list[object]", value):
+                items.append(
+                    _known_fields(inner, cast("dict[str, object]", item))
+                    if isinstance(item, dict)
+                    else item
+                )
+            return items
+        return plain
+    for candidate in (annotation, *args):
+        if (
+            isinstance(candidate, type)
+            and issubclass(candidate, BaseModel)
+            and isinstance(value, dict)
+        ):
+            return _known_fields(candidate, cast("dict[str, object]", value))
+    return plain
+
+
+def _known_fields(
+    model: type[BaseModel], document: dict[str, object]
+) -> dict[str, object]:
     """Drop keys this version of the schema does not have, and say which.
 
     A saved document was written by an *older* version of the app, so a field
     that has since been removed is expected, not a mistake — rejecting it would
     brick a running install on upgrade. A typo in a hand-written seed file is a
-    mistake, so the file source below stays strict.
+    mistake, so the file source stays strict.
     """
     dropped: list[str] = []
-    kept: dict[str, Any] = {}
+    kept: dict[str, object] = {}
     for key, value in document.items():
         field = model.model_fields.get(key)
         if field is None:
             dropped.append(key)
             continue
-        annotation = field.annotation
-        nested = next(
-            (
-                candidate
-                for candidate in (annotation, *getattr(annotation, "__args__", ()))
-                if isinstance(candidate, type) and issubclass(candidate, BaseModel)
-            ),
-            None,
-        )
-        if nested is not None and isinstance(value, dict):
-            value = _known_fields(nested, value)
-        kept[key] = value
+        kept[key] = _prune(field.annotation, value)
     if dropped:
         log.warning(
             "saved settings dropped %s: not in this version", ", ".join(sorted(dropped))
@@ -589,8 +624,8 @@ class _DatabaseSource(PydanticBaseSettingsSource):
         return None, field_name, False
 
     def __call__(self) -> dict[str, Any]:
-        document = SettingsStore(vault_root()).document()
-        return _known_fields(BrainConfigDocument, document)
+        document = cast("dict[str, object]", SettingsStore(vault_root()).document())
+        return dict(_known_fields(BrainConfigDocument, document))
 
 
 class BrainConfig(BrainConfigDocument, BaseSettings):
