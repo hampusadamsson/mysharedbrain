@@ -25,8 +25,11 @@ updates:
       prefix-development: "chore(deps-dev)"
     labels: [dependencies]
     cooldown:
-      default-days: 3
-      semver-major-days: 14
+      # A week before adopting a fresh release, a month before a major: enough
+      # time for a broken publish to be yanked (zizmor's dependabot-cooldown
+      # audit enforces a minimum here).
+      default-days: 7
+      semver-major-days: 30
     groups:
       # First match wins, so the narrower group goes first: otherwise the
       # catch-all group below would swallow the dev dependencies too.
@@ -52,8 +55,11 @@ updates:
       prefix-development: "chore(deps-dev)"
     labels: [dependencies]
     cooldown:
-      default-days: 3
-      semver-major-days: 14
+      # A week before adopting a fresh release, a month before a major: enough
+      # time for a broken publish to be yanked (zizmor's dependabot-cooldown
+      # audit enforces a minimum here).
+      default-days: 7
+      semver-major-days: 30
     groups:
       # Dev first for the same reason as the backend: first match wins.
       frontend-dev-minor-patch:
