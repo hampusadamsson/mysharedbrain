@@ -18,6 +18,7 @@ Secrets are never returned by the API — :meth:`BrainConfig.redacted` blanks th
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -35,6 +36,8 @@ from pydantic_settings import (
 
 from mysharedbrain.db import vault_root
 from mysharedbrain.settings_store import SettingsStore
+
+log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_FILE = Path("brain.yaml")
 MASK = "********"
@@ -543,6 +546,40 @@ class BrainConfigDocument(BaseModel):
         return data
 
 
+def _known_fields(model: type[BaseModel], document: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys this version of the schema does not have, and say which.
+
+    A saved document was written by an *older* version of the app, so a field
+    that has since been removed is expected, not a mistake — rejecting it would
+    brick a running install on upgrade. A typo in a hand-written seed file is a
+    mistake, so the file source below stays strict.
+    """
+    dropped: list[str] = []
+    kept: dict[str, Any] = {}
+    for key, value in document.items():
+        field = model.model_fields.get(key)
+        if field is None:
+            dropped.append(key)
+            continue
+        annotation = field.annotation
+        nested = next(
+            (
+                candidate
+                for candidate in (annotation, *getattr(annotation, "__args__", ()))
+                if isinstance(candidate, type) and issubclass(candidate, BaseModel)
+            ),
+            None,
+        )
+        if nested is not None and isinstance(value, dict):
+            value = _known_fields(nested, value)
+        kept[key] = value
+    if dropped:
+        log.warning(
+            "saved settings dropped %s: not in this version", ", ".join(sorted(dropped))
+        )
+    return kept
+
+
 class _DatabaseSource(PydanticBaseSettingsSource):
     """Settings saved by the settings page — the store of record."""
 
@@ -552,7 +589,8 @@ class _DatabaseSource(PydanticBaseSettingsSource):
         return None, field_name, False
 
     def __call__(self) -> dict[str, Any]:
-        return SettingsStore(vault_root()).document()
+        document = SettingsStore(vault_root()).document()
+        return _known_fields(BrainConfigDocument, document)
 
 
 class BrainConfig(BrainConfigDocument, BaseSettings):
@@ -654,4 +692,3 @@ def export_config_yaml(
         config = load_config()
     data = config.redacted() if redact else config.model_dump(mode="json")
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-

@@ -59,6 +59,40 @@ def test_defaults_when_file_absent(config_file: Path) -> None:
     assert all(not job.enabled for job in cfg.jobs), "shipped schedule is off"
 
 
+def test_saved_settings_survive_a_removed_field(
+    config_file: Path, vault_dir: Path
+) -> None:
+    """A saved document was written by an older version of the app.
+
+    Rejecting a field this version dropped would brick a running install on
+    upgrade: the settings row is the store of record, and it cannot be edited by
+    hand. Unknown keys are dropped instead — and the seed file stays strict, so a
+    typo in a file someone wrote still fails loudly.
+    """
+    from mysharedbrain.settings_store import SettingsStore
+
+    SettingsStore(vault_dir).save(
+        {
+            "metadata": {"written": "by an older version"},
+            "agent": {"model": "openai:gpt-4o-mini", "long_gone": True},
+            "ask": {"timeout_seconds": 90},
+        }
+    )
+
+    cfg = load_config()
+
+    assert cfg.agent.model == "openai:gpt-4o-mini"
+    assert cfg.ask.timeout_seconds == 90
+    assert not hasattr(cfg, "metadata")
+
+    # the same unknown key in the seed file is still an error
+    config_file.write_text(
+        yaml.safe_dump({"metadata": {"typo": "yes"}}), encoding="utf-8"
+    )
+    with pytest.raises(ValidationError):
+        load_config()
+
+
 def test_example_file_matches_the_shipped_defaults(
     config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
