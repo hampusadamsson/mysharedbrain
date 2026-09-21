@@ -251,6 +251,13 @@ export interface Directory {
 	notes: string[];
 }
 
+export interface ImportResult {
+	created: string[];
+	updated: string[];
+	skipped: string[];
+	errors: Record<string, string>;
+}
+
 export class ApiError extends Error {
 	status: number;
 	constructor(status: number, detail: string) {
@@ -314,6 +321,28 @@ export const api = {
 		}),
 	readBatch: (note_ids: string[]) =>
 		post<{ notes: Note[]; missing: string[] }>('/api/notes/batch', { note_ids }),
+	/** Upload files or a whole folder: each file becomes a note (FormData). */
+	importNotes: async (files: File[], prefix = '', overwrite = true): Promise<ImportResult> => {
+		const form = new FormData();
+		for (const f of files) {
+			const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+		form.append('files', f, rel);
+		}
+		form.append('prefix', prefix);
+		form.append('overwrite', String(overwrite));
+		const res = await fetch('/api/notes/import', { method: 'POST', body: form });
+		if (!res.ok) {
+			let detail = res.statusText;
+			try {
+				const body = await res.json();
+				if (typeof body?.detail === 'string') detail = body.detail;
+			} catch {
+				/* keep statusText */
+			}
+			throw new ApiError(res.status, detail);
+		}
+		return (await res.json()) as ImportResult;
+	},
 	browse: (prefix = '') => get<Directory>(`/api/browse?prefix=${encodeURIComponent(prefix)}`),
 	frontmatter: (id: string) =>
 		get<Record<string, unknown>>(`/api/notes/${encodeURIComponent(id)}/meta`),

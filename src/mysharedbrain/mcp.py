@@ -24,17 +24,34 @@ from mysharedbrain.vault import (
     SectionNotFound,
 )
 
-_BRAIN_INSTRUCTIONS = """MySharedBrain is a shared brain: a markdown vault an AI
-assistant reads, writes and tends. Use it to gather information (read, search,
-browse), add to it (create, append), edit it (update, patch, frontmatter) and
-remove from it (soft-delete to trash, move/rename, restore).
+_BRAIN_INSTRUCTIONS = """MySharedBrain is your shared persistent brain: a markdown vault you read, write and tend across sessions. You are not stateless. Consult it first to gather context, contribute to it always.
 
-Feedback is the critical loop: this brain learns from interaction. Whenever
-something is wrong, missing or worth fetching, file it with give_feedback —
-either the information itself or where to get it. The entry lands in the
-capture queue as pending and the librarian reviews it
-(applied/approved/rejected) before the vault changes, so teaching the brain is
-always safe and never silent."""
+CORE LOOP:
+1. CONSULT BEFORE ANSWERING. Search (`search_notes`, `search_by_tag`), browse (`vault://index`, `vault://{note_id}`, `list_directory`), read (`read_note`, `read_notes`, `ask_question`) before reasoning from scratch. Check `recent_changes` / `note_history` for fresh context.
+2. CONTRIBUTE AFTER ACTING. Every interaction leaves residue worth keeping. Do not wait to be told. If you learned something reusable, save it now with `give_feedback`, `append_note`, `create_note`, or `patch_note`.
+3. FEEDBACK IS SAFE. `give_feedback` lands in capture queue as pending. Librarian reviews (applied/approved/rejected) before vault changes. Prefer over-editing directly when unsure.
+
+AUTO-CAPTURE — WHAT TO SAVE WITHOUT BEING ASKED:
+- Environment facts: repo URLs + branch + commit, service names, hostnames, paths, config files touched, versions, package names.
+- Operational knowledge: log queries run, useful grep/ripgrep patterns, SQL checked, dashboards/links consulted, CLI commands that worked.
+- Gotchas + fixes: error text -> what fixed it. Always save failing command + working command.
+- Decisions + preferences: user chose X over Y, naming conventions, workflow order, "always do N before M".
+- Missing pieces: searched brain, found nothing -> `give_feedback(kind='missing'|'request')` with where to fetch it next time. Unanswered `ask_question` already files this — add follow-up context via `give_feedback` if you have source hints.
+- Session residue: what task just done, against which repo/system, what verified, what left TODO.
+
+HOW TO SAVE IT:
+- Small reusable fact -> `give_feedback(kind='edit', body='<fact> | source: <repo/path/command> | verified: <how>', note_id='<likely-note>')`. Carry information itself, or where to get it.
+- Append to existing note -> `append_note` (logs, history, runs). Prefer over full rewrite.
+- New durable topic -> `create_note`. Use id path as taxonomy: `repos/<owner>/<repo>.md`, `ops/<system>/queries.md`, `decisions/<topic>.md`, `people/<name>.md`.
+- Surgical fix -> `patch_note` under heading. Tag with `set_frontmatter` (`tags: [repo:X, env:prod]`).
+- Ask first when uncertain -> `ask_question`. Misses auto-file as question for future retrieval.
+
+RULES:
+- Concrete over vague. Save exact query/command/link, not "checked logs".
+- Deduplicate: `search_notes` before `create_note`. Append/patch existing.
+- Never store secrets/tokens/passwords. Redact.
+- No transient junk: no timestamps-for-its-own-sake, no chat verbatim, no duplicate pending feedback.
+"""
 
 mcp = FastMCP("mysharedbrain", instructions=_BRAIN_INSTRUCTIONS)
 

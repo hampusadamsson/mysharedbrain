@@ -25,7 +25,36 @@ from mysharedbrain.capture import (
     Verdict,
 )
 from mysharedbrain.protocols import AuditStore, CaptureStore
-from mysharedbrain.vault import Note, NoteNotFound, SearchHit, Vault, VaultError
+from mysharedbrain.vault import (
+    InvalidNoteId,
+    Note,
+    NoteNotFound,
+    SearchHit,
+    Vault,
+    VaultError,
+)
+
+MAX_IMPORT_FILES = 100
+"""Cap on notes per import: one folder upload, not a migration."""
+
+
+def filename_to_note_id(filename: str, prefix: str = "") -> str:
+    """Map an uploaded filename to a note id. Strips only .md/.markdown."""
+    text = filename.strip().replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    text = text.lstrip("/")
+    low = text.lower()
+    if low.endswith(".md"):
+        text = text[: -len(".md")]
+    elif low.endswith(".markdown"):
+        text = text[: -len(".markdown")]
+    if prefix.strip():
+        text = prefix.strip().replace("\\", "/").rstrip("/") + "/" + text
+    # _validate lives on Vault._path; reuse error type here for bad segments.
+    if not text.strip():
+        raise InvalidNoteId("empty filename")
+    return text
 
 
 class SearchResult(TypedDict):
@@ -171,6 +200,49 @@ class Librarian:
             detail=f"to {note.id}",
         )
         return note
+
+    def import_notes(
+        self,
+        items: list[tuple[str, str]],
+        prefix: str = "",
+        overwrite: bool = True,
+    ) -> dict[str, object]:
+        """Upsert uploaded files as notes. One audit entry per write."""
+        if len(items) > MAX_IMPORT_FILES:
+            raise ValueError(f"too many files: max {MAX_IMPORT_FILES}")
+        created: list[str] = []
+        updated: list[str] = []
+        skipped: list[str] = []
+        errors: dict[str, str] = {}
+        for filename, content in items:
+            try:
+                note_id = filename_to_note_id(filename, prefix)
+            except (InvalidNoteId, ValueError) as exc:
+                errors[filename or "?"] = str(exc)
+                continue
+            try:
+                self.vault.read(note_id)
+                exists = True
+            except VaultError:
+                exists = False
+            if exists and not overwrite:
+                skipped.append(note_id)
+                continue
+            try:
+                if exists:
+                    note = self.vault.update(note_id, content)
+                    action = "update"
+                else:
+                    note = self.vault.create(note_id, content)
+                    action = "create"
+            except VaultError as exc:
+                errors[filename] = str(exc)
+                continue
+            self.audit.append(
+                actor=self.actor, action=action, note_id=note.id, detail="via import"
+            )
+            (updated if exists else created).append(note.id)
+        return {"created": created, "updated": updated, "skipped": skipped, "errors": errors}
 
     def list_notes(
         self, prefix: str = "", limit: int | None = None, offset: int = 0

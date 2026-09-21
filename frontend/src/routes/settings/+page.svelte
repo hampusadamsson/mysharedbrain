@@ -747,7 +747,7 @@
 							spellcheck="false"
 						/>
 					</div>
-					{#if chosenInfo?.url_param || draft.agent.provider.base_url}
+					{#if chosenInfo?.url_param}
 						<div class="grid gap-2">
 							<Label for="baseurl">{urlLabel}</Label>
 							<Input

@@ -72,6 +72,7 @@ HTTP_ONLY_ROUTES: set[tuple[str, str]] = {
     ("POST", "/api/settings/mcp/test"),
     ("POST", "/api/settings/jobs/{job_id}/run"),
     ("GET", "/api/settings/jobs/{job_id}/runs"),
+    ("POST", "/api/notes/import"),
     ("GET", "/api/capture"),
     ("POST", "/api/capture/{entry_id}/review"),
     ("PUT", "/api/capture/{entry_id}/status"),

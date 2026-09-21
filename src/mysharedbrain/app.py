@@ -14,7 +14,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,7 +25,7 @@ from mysharedbrain.ask import AskTimeout, run_ask
 from mysharedbrain.audit import KINDS, LogStats
 from mysharedbrain.config import load_config
 from mysharedbrain.jobs import get_scheduler
-from mysharedbrain.service import librarian
+from mysharedbrain.service import MAX_IMPORT_FILES, librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
     NoteExists,
@@ -108,6 +108,17 @@ class FrontmatterIn(BaseModel):
 
 class BatchIn(BaseModel):
     note_ids: list[str]
+
+
+class ImportOut(BaseModel):
+    created: list[str]
+    updated: list[str]
+    skipped: list[str]
+    errors: dict[str, str]
+
+
+MAX_UPLOAD_BYTES = 1_000_000
+"""Per-file cap: brain holds text notes, not binaries."""
 
 
 class NoteOut(BaseModel):
@@ -305,6 +316,36 @@ def create_app() -> FastAPI:
     )
     def browse(prefix: str = "") -> dict[str, list[str]]:
         return librarian().list_directory(prefix)
+
+    @app.post(
+        "/api/notes/import",
+        response_model=ImportOut,
+        tags=["notes"],
+        summary="Upload files/folder as notes (multipart, UTF-8 text)",
+    )
+    async def import_notes(
+        files: list[UploadFile] = File(...),  # noqa: B008 -- FastAPI idiom
+        prefix: str = Form(default=""),
+        overwrite: bool = Form(default=True),
+    ) -> dict[str, object]:
+        if len(files) > MAX_IMPORT_FILES:
+            raise ValueError(f"too many files: max {MAX_IMPORT_FILES}")
+        items: list[tuple[str, str]] = []
+        errors: dict[str, str] = {}
+        for upload in files:
+            name = upload.filename or "?"
+            raw = await upload.read()
+            if len(raw) > MAX_UPLOAD_BYTES:
+                errors[name] = f"too large: max {MAX_UPLOAD_BYTES} bytes"
+                continue
+            try:
+                items.append((name, raw.decode("utf-8")))
+            except UnicodeDecodeError:
+                errors[name] = "not UTF-8 text"
+        result = librarian().import_notes(items, prefix=prefix, overwrite=overwrite)
+        merged = dict(result["errors"])
+        merged.update(errors)
+        return {**result, "errors": merged}
 
     @app.patch(
         "/api/notes/{note_id:path}",
