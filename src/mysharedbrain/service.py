@@ -67,6 +67,13 @@ class BatchRead(TypedDict):
     missing: list[str]
 
 
+class ImportResult(TypedDict):
+    created: list[str]
+    updated: list[str]
+    skipped: list[str]
+    errors: dict[str, str]
+
+
 _STOP_WORDS = frozenset(
     [
         "what",
@@ -206,7 +213,7 @@ class Librarian:
         items: list[tuple[str, str]],
         prefix: str = "",
         overwrite: bool = True,
-    ) -> dict[str, object]:
+    ) -> ImportResult:
         """Upsert uploaded files as notes. One audit entry per write."""
         if len(items) > MAX_IMPORT_FILES:
             raise ValueError(f"too many files: max {MAX_IMPORT_FILES}")
