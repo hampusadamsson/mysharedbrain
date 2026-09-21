@@ -242,7 +242,12 @@ class Librarian:
                 actor=self.actor, action=action, note_id=note.id, detail="via import"
             )
             (updated if exists else created).append(note.id)
-        return {"created": created, "updated": updated, "skipped": skipped, "errors": errors}
+        return {
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+        }
 
     def list_notes(
         self, prefix: str = "", limit: int | None = None, offset: int = 0
