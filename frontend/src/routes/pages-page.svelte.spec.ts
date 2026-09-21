@@ -4,14 +4,15 @@ import { render } from 'vitest-browser-svelte';
 import Pages from './+page.svelte';
 import type { Directory } from '$lib/api/client';
 
-const api = vi.hoisted(() => ({ browse: vi.fn() }));
+const api = vi.hoisted(() => ({ browse: vi.fn(), importNotes: vi.fn() }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 
 vi.mock('$lib/api/client', async () => {
 	const actual = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
 	return { ...actual, api };
 });
 
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('svelte-sonner', () => ({ toast }));
 
 function respond(dir: Partial<Directory> = {}) {
 	api.browse.mockResolvedValue({ folders: [], notes: [], ...dir });
@@ -74,6 +75,75 @@ describe('the Pages view', () => {
 		await expect
 			.element(page.getByText('Nothing here yet — create a page, or import files.'))
 			.toBeVisible();
+	});
+
+	it('imports the chosen files with replacement on by default', async () => {
+		respond();
+		api.importNotes.mockResolvedValue({ created: ['one'], updated: [], skipped: [], errors: {} });
+
+		const { container } = await render(Pages);
+
+		const picker = container.querySelector(
+			'input[type=file]:not([webkitdirectory])'
+		) as HTMLInputElement;
+		const data = new DataTransfer();
+		data.items.add(new File(['# One\n'], 'one.md', { type: 'text/markdown' }));
+		picker.files = data.files;
+		picker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await expect.poll(() => api.importNotes).toHaveBeenCalled();
+		const [, prefix, overwrite] = api.importNotes.mock.calls.at(-1) as [File[], string, boolean];
+		expect(prefix).toBe('');
+		expect(overwrite).toBe(true);
+		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 new');
+	});
+
+	it('leaves existing pages alone when replacement is switched off', async () => {
+		respond();
+		api.importNotes.mockResolvedValue({ created: [], updated: [], skipped: ['one'], errors: {} });
+
+		const { container } = await render(Pages);
+
+		await page.getByRole('checkbox', { name: 'Replace pages that already exist' }).click();
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Replace pages that already exist' }))
+			.not.toBeChecked();
+
+		const picker = container.querySelector(
+			'input[type=file]:not([webkitdirectory])'
+		) as HTMLInputElement;
+		const data = new DataTransfer();
+		data.items.add(new File(['# One\n'], 'one.md', { type: 'text/markdown' }));
+		picker.files = data.files;
+		picker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await expect.poll(() => api.importNotes).toHaveBeenCalled();
+		expect((api.importNotes.mock.calls.at(-1) as [File[], string, boolean])[2]).toBe(false);
+		// a skip is reported as a skip, not as "nothing imported"
+		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 skipped');
+	});
+
+	it('reports a failed file alongside the ones that landed', async () => {
+		respond();
+		api.importNotes.mockResolvedValue({
+			created: ['one'],
+			updated: [],
+			skipped: [],
+			errors: { 'bad.bin': 'not UTF-8 text' }
+		});
+
+		const { container } = await render(Pages);
+
+		const picker = container.querySelector(
+			'input[type=file]:not([webkitdirectory])'
+		) as HTMLInputElement;
+		const data = new DataTransfer();
+		data.items.add(new File(['x'], 'one.md'));
+		picker.files = data.files;
+		picker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 new, 1 failed');
+		await expect.poll(() => toast.error).toHaveBeenCalledWith('bad.bin: not UTF-8 text');
 	});
 
 	it('shows the failure instead of an empty vault when the read fails', async () => {

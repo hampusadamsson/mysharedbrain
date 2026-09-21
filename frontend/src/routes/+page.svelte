@@ -3,6 +3,7 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import VaultBrowser from '$lib/components/VaultBrowser.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -14,6 +15,9 @@
 	let loading = $state(true);
 	let error = $state('');
 	let uploading = $state(false);
+	// Replace pages that already exist? Visible, because importing over an
+	// existing note is the one destructive thing this view can do.
+	let overwrite = $state(true);
 	let fileInput: HTMLInputElement | undefined = $state();
 	let folderInput: HTMLInputElement | undefined = $state();
 
@@ -24,12 +28,18 @@
 		if (files.length === 0 || uploading) return;
 		uploading = true;
 		try {
-			const result = await api.importNotes(files);
-			const n = result.created.length + result.updated.length;
+			const result = await api.importNotes(files, '', overwrite);
+			// Say what actually happened: with replacement off, every existing page
+			// is skipped, and "nothing imported" would read as a failure.
+			const parts: string[] = [];
+			if (result.created.length) parts.push(`${result.created.length} new`);
+			if (result.updated.length) parts.push(`${result.updated.length} replaced`);
+			if (result.skipped.length) parts.push(`${result.skipped.length} skipped`);
 			const errs = Object.entries(result.errors);
-			if (n > 0) toast.success(`Imported ${n} page${n === 1 ? '' : 's'}`);
-			if (errs.length > 0) toast.error(`${errs[0][0]}: ${errs[0][1]}`);
-			if (n === 0 && errs.length === 0) toast.info('Nothing imported');
+			if (errs.length) parts.push(`${errs.length} failed`);
+			if (parts.length) toast.success(`Imported: ${parts.join(', ')}`);
+			else toast.info('Nothing to import');
+			if (errs.length) toast.error(`${errs[0][0]}: ${errs[0][1]}`);
 			await load();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : String(err));
@@ -85,7 +95,18 @@
 				<p class="mt-1 text-sm text-muted-foreground">{summary}</p>
 			{/if}
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap items-center gap-3">
+			<label
+				class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+				title="Off: a page that already exists is left alone and reported as skipped"
+			>
+				<Checkbox
+					bind:checked={overwrite}
+					aria-label="Replace pages that already exist"
+					disabled={uploading}
+				/>
+				Replace existing
+			</label>
 			<Button variant="outline" size="sm" disabled={uploading} onclick={() => fileInput?.click()}>
 				{uploading ? 'Importing…' : 'Upload files'}
 			</Button>
