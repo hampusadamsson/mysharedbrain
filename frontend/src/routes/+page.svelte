@@ -69,13 +69,21 @@
 	>
 		{error}
 	</p>
-{:else if folders.length === 0 && notes.length === 0}
-	<EmptyState />
 {:else}
+	<!-- The upload controls are not part of the "has pages" branch: importing a
+	     folder is how an empty vault gets filled, which is the one case where
+	     hiding them would be absurd. -->
 	<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
 		<div>
-			<h1 class="text-2xl font-semibold tracking-tight">All pages</h1>
-			<p class="mt-1 text-sm text-muted-foreground">{summary}</p>
+			{#if folders.length === 0 && notes.length === 0}
+				<h1 class="text-2xl font-semibold tracking-tight">All pages</h1>
+				<p class="mt-1 text-sm text-muted-foreground">
+					Nothing here yet — create a page, or import files.
+				</p>
+			{:else}
+				<h1 class="text-2xl font-semibold tracking-tight">All pages</h1>
+				<p class="mt-1 text-sm text-muted-foreground">{summary}</p>
+			{/if}
 		</div>
 		<div class="flex gap-2">
 			<Button variant="outline" size="sm" disabled={uploading} onclick={() => fileInput?.click()}>
@@ -95,5 +103,9 @@
 		onchange={onUpload}
 	/>
 	<input bind:this={folderInput} type="file" webkitdirectory class="hidden" onchange={onUpload} />
-	<VaultBrowser {folders} {notes} />
+	{#if folders.length === 0 && notes.length === 0}
+		<EmptyState />
+	{:else}
+		<VaultBrowser {folders} {notes} />
+	{/if}
 {/if}

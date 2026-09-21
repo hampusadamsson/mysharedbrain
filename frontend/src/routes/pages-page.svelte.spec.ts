@@ -62,6 +62,20 @@ describe('the Pages view', () => {
 		await expect.element(page.getByRole('button', { name: 'Create page' })).toBeVisible();
 	});
 
+	it('still offers upload on an empty vault, where import is the whole point', async () => {
+		// the controls used to live in the "has pages" branch, so a fresh vault —
+		// the one case importing exists for — had no way to import
+		respond();
+
+		await render(Pages);
+
+		await expect.element(page.getByRole('button', { name: 'Upload files' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Upload folder' })).toBeVisible();
+		await expect
+			.element(page.getByText('Nothing here yet — create a page, or import files.'))
+			.toBeVisible();
+	});
+
 	it('shows the failure instead of an empty vault when the read fails', async () => {
 		api.browse.mockRejectedValue(new Error('vault unavailable'));
 

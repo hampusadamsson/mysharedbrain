@@ -39,16 +39,22 @@ MAX_IMPORT_FILES = 100
 
 
 def filename_to_note_id(filename: str, prefix: str = "") -> str:
-    """Map an uploaded filename to a note id. Strips only .md/.markdown."""
+    """Map an uploaded filename to a note id.
+
+    Strips the suffixes the uploader invites (``.md``, ``.markdown``, ``.txt``):
+    the id is the note's name, not the file that carried it. Segments are left
+    to :meth:`Vault.create`, which validates them — a traversal attempt lands in
+    the import's ``errors`` rather than reaching the filesystem.
+    """
     text = filename.strip().replace("\\", "/")
     while text.startswith("./"):
         text = text[2:]
     text = text.lstrip("/")
     low = text.lower()
-    if low.endswith(".md"):
-        text = text[: -len(".md")]
-    elif low.endswith(".markdown"):
-        text = text[: -len(".markdown")]
+    for suffix in (".md", ".markdown", ".txt"):
+        if low.endswith(suffix):
+            text = text[: -len(suffix)]
+            break
     if prefix.strip():
         text = prefix.strip().replace("\\", "/").rstrip("/") + "/" + text
     # _validate lives on Vault._path; reuse error type here for bad segments.
