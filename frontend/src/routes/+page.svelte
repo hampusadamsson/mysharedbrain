@@ -94,12 +94,6 @@
 		class="hidden"
 		onchange={onUpload}
 	/>
-	<input
-		bind:this={folderInput}
-		type="file"
-		webkitdirectory
-		class="hidden"
-		onchange={onUpload}
-	/>
+	<input bind:this={folderInput} type="file" webkitdirectory class="hidden" onchange={onUpload} />
 	<VaultBrowser {folders} {notes} />
 {/if}

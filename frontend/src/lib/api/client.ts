@@ -326,7 +326,7 @@ export const api = {
 		const form = new FormData();
 		for (const f of files) {
 			const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-		form.append('files', f, rel);
+			form.append('files', f, rel);
 		}
 		form.append('prefix', prefix);
 		form.append('overwrite', String(overwrite));
