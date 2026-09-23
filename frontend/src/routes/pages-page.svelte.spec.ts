@@ -95,7 +95,7 @@ describe('the Pages view', () => {
 		const [, prefix, overwrite] = api.importNotes.mock.calls.at(-1) as [File[], string, boolean];
 		expect(prefix).toBe('');
 		expect(overwrite).toBe(true);
-		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 new');
+		await expect.element(page.getByText('1 new')).toBeVisible();
 	});
 
 	it('leaves existing pages alone when replacement is switched off', async () => {
@@ -120,7 +120,7 @@ describe('the Pages view', () => {
 		await expect.poll(() => api.importNotes).toHaveBeenCalled();
 		expect((api.importNotes.mock.calls.at(-1) as [File[], string, boolean])[2]).toBe(false);
 		// a skip is reported as a skip, not as "nothing imported"
-		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 skipped');
+		await expect.element(page.getByText('1 skipped')).toBeVisible();
 	});
 
 	it('reports a failed file alongside the ones that landed', async () => {
@@ -142,8 +142,51 @@ describe('the Pages view', () => {
 		picker.files = data.files;
 		picker.dispatchEvent(new Event('change', { bubbles: true }));
 
-		await expect.poll(() => toast.success).toHaveBeenCalledWith('Imported: 1 new, 1 failed');
-		await expect.poll(() => toast.error).toHaveBeenCalledWith('bad.bin: not UTF-8 text');
+		await expect.element(page.getByText('1 new, 1 failed')).toBeVisible();
+		await expect.element(page.getByText('bad.bin')).toBeVisible();
+		await expect.element(page.getByText('not UTF-8 text')).toBeVisible();
+	});
+
+	it('refuses an oversized selection out loud instead of doing nothing', async () => {
+		respond();
+
+		const { container } = await render(Pages);
+
+		const picker = container.querySelector(
+			'input[type=file]:not([webkitdirectory])'
+		) as HTMLInputElement;
+		const data = new DataTransfer();
+		for (let i = 0; i < 251; i++) data.items.add(new File(['x'], `n${i}.md`));
+		picker.files = data.files;
+		picker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await expect
+			.poll(() => toast.error)
+			.toHaveBeenCalledWith(expect.stringContaining('the limit is 250 per import'));
+		// and nothing was sent
+		expect(api.importNotes).not.toHaveBeenCalled();
+	});
+
+	it('opens the import dialog and refreshes when it finishes', async () => {
+		respond();
+		api.importNotes.mockResolvedValue({ created: ['one'], updated: [], skipped: [], errors: {} });
+		respond({ notes: ['one'] });
+
+		const { container } = await render(Pages);
+
+		const picker = container.querySelector(
+			'input[type=file]:not([webkitdirectory])'
+		) as HTMLInputElement;
+		const data = new DataTransfer();
+		data.items.add(new File(['# One\n'], 'one.md', { type: 'text/markdown' }));
+		picker.files = data.files;
+		picker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		await expect.element(page.getByText('Import finished')).toBeVisible();
+		await expect.element(page.getByText('1 new')).toBeVisible();
+		// the listing reloaded, so the new page is there behind the dialog
+		await expect.poll(() => api.browse.mock.calls.length).toBeGreaterThan(1);
+		await expect.element(page.getByRole('link', { name: /one/ })).toBeVisible();
 	});
 
 	it('shows the failure instead of an empty vault when the read fails', async () => {

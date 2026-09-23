@@ -86,6 +86,7 @@ def test_import_reports_bad_names_without_failing_the_batch(vault_dir: Path) -> 
 
 def test_import_caps_the_batch(vault_dir: Path) -> None:
     lib = _lib(vault_dir)
+    assert MAX_IMPORT_FILES == 250
     too_many = [(f"n{i}.md", "x") for i in range(MAX_IMPORT_FILES + 1)]
 
     with pytest.raises(ValueError, match="too many files"):

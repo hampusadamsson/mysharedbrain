@@ -34,8 +34,9 @@ from mysharedbrain.vault import (
     VaultError,
 )
 
-MAX_IMPORT_FILES = 100
-"""Cap on notes per import: one folder upload, not a migration."""
+MAX_IMPORT_FILES = 250
+"""Cap on notes per import: a folder, not a migration. The UI uploads in
+batches, so a bigger tree is several requests rather than one giant one."""
 
 
 def filename_to_note_id(filename: str, prefix: str = "") -> str:

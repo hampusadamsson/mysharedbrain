@@ -251,6 +251,9 @@ export interface Directory {
 	notes: string[];
 }
 
+/** Files per import request; the server enforces the same number. */
+export const MAX_IMPORT_FILES = 250;
+
 export interface ImportResult {
 	created: string[];
 	updated: string[];

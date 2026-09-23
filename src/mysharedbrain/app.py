@@ -120,6 +120,13 @@ class ImportOut(BaseModel):
 MAX_UPLOAD_BYTES = 1_000_000
 """Per-file cap: brain holds text notes, not binaries."""
 
+MAX_IMPORT_BYTES = 64_000_000
+"""Total bytes one import request may carry.
+
+The file count alone does not bound memory: 250 files at the per-file cap is
+250 MB read into the process before anything is written. The UI batches well
+under this; a hand-rolled client is refused rather than trusted."""
+
 
 class NoteOut(BaseModel):
     id: str
@@ -330,11 +337,17 @@ def create_app() -> FastAPI:
     ) -> dict[str, object]:
         if len(files) > MAX_IMPORT_FILES:
             raise ValueError(f"too many files: max {MAX_IMPORT_FILES}")
+        total = 0
         items: list[tuple[str, str]] = []
         errors: dict[str, str] = {}
         for upload in files:
             name = upload.filename or "?"
             raw = await upload.read()
+            total += len(raw)
+            if total > MAX_IMPORT_BYTES:
+                raise ValueError(
+                    f"too much data in one import: max {MAX_IMPORT_BYTES} bytes"
+                )
             if len(raw) > MAX_UPLOAD_BYTES:
                 errors[name] = f"too large: max {MAX_UPLOAD_BYTES} bytes"
                 continue

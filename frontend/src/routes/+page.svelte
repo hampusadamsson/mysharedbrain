@@ -4,6 +4,8 @@
 	import VaultBrowser from '$lib/components/VaultBrowser.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import ImportDialog from '$lib/components/ImportDialog.svelte';
+	import { MAX_IMPORT_FILES } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -18,6 +20,8 @@
 	// Replace pages that already exist? Visible, because importing over an
 	// existing note is the one destructive thing this view can do.
 	let overwrite = $state(true);
+	let importOpen = $state(false);
+	let importFiles = $state<File[]>([]);
 	let fileInput: HTMLInputElement | undefined = $state();
 	let folderInput: HTMLInputElement | undefined = $state();
 
@@ -26,26 +30,22 @@
 		const files = [...(input.files ?? [])];
 		input.value = '';
 		if (files.length === 0 || uploading) return;
-		uploading = true;
-		try {
-			const result = await api.importNotes(files, '', overwrite);
-			// Say what actually happened: with replacement off, every existing page
-			// is skipped, and "nothing imported" would read as a failure.
-			const parts: string[] = [];
-			if (result.created.length) parts.push(`${result.created.length} new`);
-			if (result.updated.length) parts.push(`${result.updated.length} replaced`);
-			if (result.skipped.length) parts.push(`${result.skipped.length} skipped`);
-			const errs = Object.entries(result.errors);
-			if (errs.length) parts.push(`${errs.length} failed`);
-			if (parts.length) toast.success(`Imported: ${parts.join(', ')}`);
-			else toast.info('Nothing to import');
-			if (errs.length) toast.error(`${errs[0][0]}: ${errs[0][1]}`);
-			await load();
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : String(err));
-		} finally {
-			uploading = false;
+		if (files.length > MAX_IMPORT_FILES) {
+			// Say so rather than sending a request that will be refused: a silent
+			// no-op is what made this feel broken.
+			toast.error(
+				`${files.length} files selected — the limit is ${MAX_IMPORT_FILES} per import. Import them in parts.`
+			);
+			return;
 		}
+		uploading = true;
+		importFiles = files;
+		importOpen = true;
+	}
+
+	function importFinished() {
+		uploading = false;
+		void load();
 	}
 
 	const plural = (n: number, one: string) => `${n} ${n === 1 ? one : one + 's'}`;
@@ -129,4 +129,16 @@
 	{:else}
 		<VaultBrowser {folders} {notes} />
 	{/if}
+{/if}
+
+{#if importOpen}
+	<ImportDialog
+		files={importFiles}
+		{overwrite}
+		onfinished={importFinished}
+		onclose={() => {
+			importOpen = false;
+			importFiles = [];
+		}}
+	/>
 {/if}
