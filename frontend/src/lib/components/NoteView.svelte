@@ -229,24 +229,39 @@
 {/if}
 
 {#if tags.length > 0 || otherProps.length > 0}
-	<dl class="mb-5 flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-muted/40 px-3 py-2.5">
+	<!-- Properties: one key per row, and an array value gets one row per entry.
+	     Keys wrap side by side before this, which made a five-property note read
+	     as a paragraph. -->
+	<dl
+		class="mb-5 grid grid-cols-[minmax(5rem,auto)_1fr] items-baseline gap-x-4 gap-y-2 rounded-lg border bg-muted/40 px-3 py-2.5"
+	>
 		{#if tags.length > 0}
-			<div class="flex items-center gap-2">
-				<dt class="text-xs font-medium text-muted-foreground">tags</dt>
-				<dd class="flex flex-wrap gap-1">
+			<dt class="text-xs font-medium text-muted-foreground">tags</dt>
+			<dd>
+				<ul class="grid justify-items-start gap-1">
 					{#each tags as tag (tag)}
-						<a href={`/search?q=${encodeURIComponent(tag)}`} title={`Find notes tagged ${tag}`}>
-							<Badge variant="secondary">{tag}</Badge>
-						</a>
+						<li>
+							<a href={`/search?q=${encodeURIComponent(tag)}`} title={`Find notes tagged ${tag}`}>
+								<Badge variant="secondary">{tag}</Badge>
+							</a>
+						</li>
 					{/each}
-				</dd>
-			</div>
+				</ul>
+			</dd>
 		{/if}
 		{#each otherProps as [key, value] (key)}
-			<div class="flex items-center gap-2">
-				<dt class="text-xs font-medium text-muted-foreground">{key}</dt>
-				<dd class="text-sm">{formatProperty(value)}</dd>
-			</div>
+			<dt class="text-xs font-medium text-muted-foreground">{key}</dt>
+			<dd class="min-w-0 text-sm">
+				{#if Array.isArray(value)}
+					<ul class="grid gap-0.5">
+						{#each value as item, i (i)}
+							<li class="break-words">{formatProperty(item)}</li>
+						{/each}
+					</ul>
+				{:else}
+					<span class="break-words">{formatProperty(value)}</span>
+				{/if}
+			</dd>
 		{/each}
 	</dl>
 {/if}

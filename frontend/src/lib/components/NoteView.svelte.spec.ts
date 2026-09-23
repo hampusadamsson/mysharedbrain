@@ -125,6 +125,38 @@ describe('NoteView', () => {
 		expect(article?.querySelector('table')).not.toBeNull();
 	});
 
+	it('lists properties one key per row, arrays one value per row', async () => {
+		api.frontmatter.mockResolvedValue({
+			tags: ['type/note', 'status/active'],
+			owner: 'dml',
+			aliases: ['homelab', 'lab', 'elitedesk']
+		});
+
+		const { container } = await render(NoteView, {
+			note: { id: 'projects/homelab', content: '# Homelab\n' },
+			onchanged: vi.fn(async () => {}),
+			onerror: vi.fn()
+		});
+
+		await expect.poll(() => container.querySelectorAll('dl dt').length).toBe(3);
+		const keys = [...container.querySelectorAll('dl dt')].map((dt) => dt.textContent?.trim());
+		expect(keys).toEqual(['tags', 'owner', 'aliases']);
+
+		// the array properties render one row per value, not a comma-joined line
+		const lists = [...container.querySelectorAll('dl dd ul')];
+		expect(lists.map((ul) => ul.querySelectorAll('li').length)).toEqual([2, 3]);
+		expect([...lists[1].querySelectorAll('li')].map((li) => li.textContent?.trim())).toEqual([
+			'homelab',
+			'lab',
+			'elitedesk'
+		]);
+		// a scalar stays a single value, with no list around it
+		const owner = [...container.querySelectorAll('dl dd')].find((dd) =>
+			dd.textContent?.includes('dml')
+		);
+		expect(owner?.querySelector('ul')).toBeNull();
+	});
+
 	it('saves content without navigating when the id is unchanged', async () => {
 		api.updateNote.mockResolvedValue({ id: note.id, content: 'edited' });
 		const onchanged = vi.fn(async () => {});
