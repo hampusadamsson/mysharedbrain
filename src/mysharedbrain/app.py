@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -25,6 +25,7 @@ from mysharedbrain.ask import AskTimeout, run_ask
 from mysharedbrain.audit import KINDS, LogStats
 from mysharedbrain.config import load_config
 from mysharedbrain.jobs import get_scheduler
+from mysharedbrain.mcp import mcp as mcp_server
 from mysharedbrain.service import MAX_IMPORT_FILES, librarian
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -33,9 +34,22 @@ from mysharedbrain.vault import (
     SectionNotFound,
 )
 
+
+def _resolve_static_dir() -> Path:
+    """Built UI dir: package-internal first (wheel/uvx), repo-root fallback."""
+    candidates = [
+        Path(__file__).resolve().parent / "static",
+        Path(__file__).resolve().parent.parent.parent / "static",
+    ]
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return candidates[0]
+
+
 # Built UI (SvelteKit adapter-static output), copied to ./static in the image.
-# Absent in local dev — then this process is API-only and vite serves the UI.
-STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
+# Absent in local dev and in uvx/git installs — then API-only, no SPA fallback.
+STATIC_DIR = _resolve_static_dir()
 
 _NOT_FOUND = (NoteNotFound, SectionNotFound, capture.EntryNotFound)
 _CONFLICT = (NoteExists, capture.EntryAlreadyReviewed)
@@ -252,18 +266,26 @@ def _stats_out(stats: LogStats) -> dict[str, object]:
     }
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Start/stop the job scheduler with the app (no-op when disabled)."""
-    scheduler = get_scheduler()
-    scheduler.start()
-    try:
-        yield
-    finally:
-        await scheduler.stop()
-
-
 def create_app() -> FastAPI:
+    # Streamable-HTTP MCP endpoint lives at /mcp/ on this same app, so one
+    # process serves API + UI + MCP. Inner path "/" because the mount prefix
+    # supplies "/mcp" (the default inner "/mcp" would double to /mcp/mcp).
+    # Trailing-slash mount: bare /mcp 307-redirects (method+body preserved,
+    # fetch-based MCP clients follow it), because a Mount only matches the
+    # exact prefix for sub-path routing, never the bare path itself.
+    mcp_http_app = mcp_server.http_app(path="/")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        """Run the MCP session manager and the job scheduler with the app."""
+        async with mcp_http_app.lifespan(app):
+            scheduler = get_scheduler()
+            scheduler.start()
+            try:
+                yield
+            finally:
+                await scheduler.stop()
+
     app = FastAPI(
         title="MySharedBrain",
         version="0.1.0",
@@ -278,6 +300,17 @@ def create_app() -> FastAPI:
         app.exception_handler(exc)(_http_error)
 
     app.include_router(settings_router)
+
+    # Mount BEFORE the SPA catch-all below: that route matches /{full_path:path}
+    # and would otherwise swallow /mcp into index.html.
+    app.mount("/mcp/", mcp_http_app, name="mcp")
+
+    @app.api_route("/mcp", methods=["GET", "POST", "DELETE"], include_in_schema=False)
+    def mcp_bare_redirect() -> RedirectResponse:
+        """Bare /mcp → /mcp/: a Mount never matches the exact prefix itself,
+        and the SPA catch-all would answer 405, so redirect explicitly. 307
+        preserves method+body; fetch-based MCP clients follow it."""
+        return RedirectResponse(url="/mcp/", status_code=307)
 
     @app.get(
         "/health",
@@ -648,6 +681,8 @@ def create_app() -> FastAPI:
             # API, health and docs routes above take precedence; unknown API
             # paths must stay JSON 404s.
             if full_path == "api" or full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not Found")
+            if full_path == "mcp" or full_path.startswith("mcp/"):
                 raise HTTPException(status_code=404, detail="Not Found")
             candidate = STATIC_DIR / full_path
             if full_path and candidate.is_file():

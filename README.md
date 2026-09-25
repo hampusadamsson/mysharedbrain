@@ -63,12 +63,37 @@ curl -sX POST localhost:8000/api/request -H 'Content-Type: application/json' \
   -d '{"question":"what runs on elitedesk?"}'
 ```
 
+No clone needed — run it straight from GitHub with
+[uvx](https://docs.astral.sh/uv/guides/tools/) (API + MCP, no bundled UI):
+
+```bash
+uvx --from git+https://github.com/hampusadamsson/mysharedbrain mysharedbrain --help
+VAULT_DIR=/path/to/vault uvx --from git+https://github.com/hampusadamsson/mysharedbrain mysharedbrain
+```
+
+Then docs live at `http://localhost:8000/docs`. `VAULT_DIR` defaults to
+`./vault`; `BRAIN_CONFIG` defaults to `./brain.yaml` (missing file = defaults).
+Pin a revision with `git+https://github.com/hampusadamsson/mysharedbrain@<sha>`.
+The git checkout carries no built UI (`/static/` is git-ignored), so uvx serves
+the API only — pair it with `docker` below or `cd frontend && pnpm dev` for
+the web UI.
+
 Give it to an agent over MCP (stdio):
 
 ```json
 { "mcpServers": { "mysharedbrain": {
   "command": "uv", "args": ["run", "mysharedbrain", "--mcp"],
   "cwd": "/path/to/mysharedbrain",
+  "env": { "VAULT_DIR": "/path/to/vault" }
+} } }
+```
+
+Same over uvx, no checkout (drop `cwd`, uvx resolves the package itself):
+
+```json
+{ "mcpServers": { "mysharedbrain": {
+  "command": "uvx",
+  "args": ["--from", "git+https://github.com/hampusadamsson/mysharedbrain", "mysharedbrain", "--mcp"],
   "env": { "VAULT_DIR": "/path/to/vault" }
 } } }
 ```
@@ -162,9 +187,10 @@ settings or approve its own queue entries would be checking its own work.
 
 - **REST docs:** `/docs` on a running instance — Swagger UI generated from the
   app, so it is never out of date — plus `/redoc` and `/openapi.json`.
-- **MCP:** stdio (`uv run mysharedbrain --mcp`), with tools, resources
-  (`vault://<id>`, `vault://index`) and prompts (`ask_librarian`,
-  `file_feedback`).
+- **MCP:** stdio (`uv run mysharedbrain --mcp`) or Streamable HTTP
+  (`POST /mcp/` on a running instance; bare `/mcp` 307-redirects), with
+  tools, resources (`vault://<id>`, `vault://index`) and prompts
+  (`ask_librarian`, `file_feedback`).
 
 | Task | REST | MCP |
 | ---- | ---- | --- |
