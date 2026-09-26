@@ -66,6 +66,29 @@ export interface TreeNode {
 	children: TreeNode[];
 }
 
+/** Compose single-child folder chains (`a` → `b` → `c` becomes one `a/b/c` row).
+ *
+ * Only pure folders merge: a node that is itself a page keeps its own row (its
+ * link must stay reachable), and a lone file child keeps its own row. The
+ * merged node carries the deepest `full`, so toggle state, links and the
+ * active-descendant check keep working on real paths. Still foldable as one.
+ */
+export function compactTree(nodes: TreeNode[]): TreeNode[] {
+	return nodes.map((node) => {
+		let name = node.name;
+		let current = node;
+		while (
+			!current.isPage &&
+			current.children.length === 1 &&
+			!current.children[0].isPage
+		) {
+			current = current.children[0];
+			name = `${name}/${current.name}`;
+		}
+		return { name, full: current.full, isPage: current.isPage, children: compactTree(current.children) };
+	});
+}
+
 /** Nested folder tree from flat note ids (folders and leaves sorted). */
 export function buildTree(ids: string[]): TreeNode[] {
 	const pageSet = new Set(ids);

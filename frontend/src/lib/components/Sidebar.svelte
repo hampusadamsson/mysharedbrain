@@ -9,14 +9,14 @@
 		Settings
 	} from '@lucide/svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { buildTree } from '$lib/notes';
+	import { buildTree, compactTree } from '$lib/notes';
 	import { space } from '$lib/stores/space.svelte';
 	import TreeItem from './TreeItem.svelte';
 
 	const currentId = $derived(
 		page.url.pathname.startsWith('/p/') ? decodeURIComponent(page.url.pathname.slice(3)) : ''
 	);
-	const tree = $derived(buildTree(space.notes));
+	const tree = $derived(compactTree(buildTree(space.notes)));
 
 	const NAV = [
 		{ href: '/', label: 'Pages', icon: FileText },

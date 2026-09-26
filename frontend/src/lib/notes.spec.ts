@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildTree,
+	compactTree,
 	formatProperty,
 	isLibrarian,
 	pageUrl,
@@ -80,6 +81,28 @@ describe('isLibrarian', () => {
 });
 
 describe('buildTree', () => {
+	it('composes single-child folder chains, keeps pages reachable', () => {
+		const tree = compactTree(buildTree(['a/b/c/note', 'todo']));
+		expect(tree.map((n) => n.full)).toEqual(['a/b/c', 'todo']);
+		const chain = tree[0];
+		expect(chain.name).toBe('a/b/c');
+		expect(chain.isPage).toBe(false);
+		expect(chain.children.map((n) => n.full)).toEqual(['a/b/c/note']);
+	});
+
+	it('stops composing at pages and at branches', () => {
+		// `a` is itself a page: its row (and link) must survive.
+		const withPage = compactTree(buildTree(['a', 'a/b/note']));
+		expect(withPage.map((n) => n.name)).toEqual(['a']);
+		expect(withPage[0].isPage).toBe(true);
+		expect(withPage[0].children.map((n) => n.full)).toEqual(['a/b']);
+		expect(withPage[0].children[0].children.map((n) => n.full)).toEqual(['a/b/note']);
+		// two children: no composing.
+		const branched = compactTree(buildTree(['a/b/one', 'a/c/two']));
+		expect(branched.map((n) => n.name)).toEqual(['a']);
+		expect(branched[0].children.map((n) => n.name)).toEqual(['b', 'c']);
+	});
+
 	it('nests folders, sorts, and dedupes page-folders', () => {
 		const tree = buildTree(['todo', 'projects/homelab', 'projects/golf', 'a', 'a/b']);
 		expect(tree.map((n) => n.full)).toEqual(['a', 'projects', 'todo']);
