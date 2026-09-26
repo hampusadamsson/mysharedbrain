@@ -157,7 +157,7 @@ jobs:
             | grep -v '^-e ' > /tmp/requirements.txt
           uvx pip-audit==2.9.0 -r /tmp/requirements.txt --progress-spinner off
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
           package_json_file: frontend/package.json
