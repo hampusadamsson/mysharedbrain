@@ -1,6 +1,6 @@
 [project]
 name = "mysharedbrain"
-version = "0.2.0"
+version = "0.3.0"
 description = "MySharedBrain — AI-native markdown wiki vault: librarian agent, MCP server, feedback queue and audit log"
 readme = "README.md"
 license = { text = "MIT" }

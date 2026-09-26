@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/hampusadamsson/mysharedbrain/compare/v0.2.0...v0.3.0) (2026-09-26)
+
+
+### Features
+
+* **ui:** compose single-child folder chains in sidebar ([f79478b](https://github.com/hampusadamsson/mysharedbrain/commit/f79478b4d960509e8432b3e7c39b9b16c5eb8ac4))
+
+
+### Bug Fixes
+
+* **ci:** prettier format, bandit B104/B324 ([dbf091e](https://github.com/hampusadamsson/mysharedbrain/commit/dbf091eb95ccd8aa365b832a2edb34afea72bbb1))
+* **vault:** exclude dot-directories from listings ([2a93a6c](https://github.com/hampusadamsson/mysharedbrain/commit/2a93a6c7e4816bd5dfba2cd039c4b0bf0705ce7b))
+
 ## [0.2.0](https://github.com/hampusadamsson/mysharedbrain/compare/v0.1.0...v0.2.0) (2026-09-26)
 
 
