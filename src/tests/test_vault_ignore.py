@@ -121,6 +121,21 @@ def test_brainignore_file_unions_with_config(vault_dir: Path) -> None:
     assert vault.list_notes() == ["keep"]
 
 
+def test_dot_directories_are_never_notes(vault_dir: Path) -> None:
+    """Tooling folders (`.obsidian/`, …) hold no notes — hidden segments are
+    rejected on access, so listings must not advertise them either."""
+    obsidian = vault_dir / ".obsidian"
+    obsidian.mkdir()
+    (obsidian / "app.json").write_text("{}", encoding="utf-8")
+    (obsidian / "note.md").write_text("hi", encoding="utf-8")
+    vault = Vault(vault_dir)
+    assert vault.list_notes() == []
+    assert vault.list_directory("") == {"folders": [], "notes": []}
+    assert vault.search_names("note") == []
+    with pytest.raises(InvalidNoteId, match="hidden"):
+        vault.read(".obsidian/note")
+
+
 def test_restore_into_ignored_path_blocked(vault_dir: Path) -> None:
     plain = Vault(vault_dir)
     plain.create("secret", "v1")

@@ -430,9 +430,11 @@ class Vault:
         return any(pattern_matches(p, rel) for p in self._ignore)
 
     def _is_internal(self, path: Path) -> bool:
-        return any(
-            part in INTERNAL_DIRS for part in path.relative_to(self.root).parts[:-1]
-        ) or path.name.startswith(".")
+        parts = path.relative_to(self.root).parts
+        return (
+            any(part in INTERNAL_DIRS or part.startswith(".") for part in parts[:-1])
+            or path.name.startswith(".")
+        )
 
     def search_names(self, query: str) -> list[str]:
         """Case-insensitive substring match on note ids."""
