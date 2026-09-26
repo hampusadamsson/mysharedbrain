@@ -33,7 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="serve the MCP server over stdio instead of the HTTP API",
     )
     parser.add_argument(
-        "--host", default="0.0.0.0", help="HTTP bind host (default: %(default)s)"
+        "--host",
+        default="0.0.0.0",  # nosec B104 -- container default; override with --host
+        help="HTTP bind host (default: %(default)s)",
     )
     parser.add_argument(
         "--port", type=int, default=8000, help="HTTP bind port (default: %(default)s)"

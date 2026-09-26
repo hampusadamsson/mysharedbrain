@@ -77,15 +77,16 @@ export function compactTree(nodes: TreeNode[]): TreeNode[] {
 	return nodes.map((node) => {
 		let name = node.name;
 		let current = node;
-		while (
-			!current.isPage &&
-			current.children.length === 1 &&
-			!current.children[0].isPage
-		) {
+		while (!current.isPage && current.children.length === 1 && !current.children[0].isPage) {
 			current = current.children[0];
 			name = `${name}/${current.name}`;
 		}
-		return { name, full: current.full, isPage: current.isPage, children: compactTree(current.children) };
+		return {
+			name,
+			full: current.full,
+			isPage: current.isPage,
+			children: compactTree(current.children)
+		};
 	});
 }
 

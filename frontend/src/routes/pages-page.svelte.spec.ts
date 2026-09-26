@@ -51,8 +51,8 @@ describe('the Pages view', () => {
 		const links = () =>
 			page
 				.getByRole('link', { name: /-note/ })
-			.elements()
-			.map((el) => el.getAttribute('href'));
+				.elements()
+				.map((el) => el.getAttribute('href'));
 		await expect.poll(links).toEqual(['/p/a-note', '/p/b-note']);
 		await expect.element(page.getByRole('button', { name: 'Sort Z to A' })).toBeVisible();
 

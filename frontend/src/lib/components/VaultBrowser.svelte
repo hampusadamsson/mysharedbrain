@@ -19,7 +19,7 @@
 		try {
 			ascending = localStorage.getItem('vault-sort-order') !== 'desc';
 		} catch {
-		/* private mode / no storage — stay ascending */
+			/* private mode / no storage — stay ascending */
 		}
 	});
 
@@ -28,7 +28,7 @@
 		try {
 			localStorage.setItem('vault-sort-order', ascending ? 'asc' : 'desc');
 		} catch {
-		/* ignore */
+			/* ignore */
 		}
 	}
 

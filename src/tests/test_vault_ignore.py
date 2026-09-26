@@ -95,6 +95,7 @@ def test_listings_and_search_hide_ignored(
     assert vault.list_directory("archive") == {"folders": [], "notes": []}
     assert vault.search_names("archive") == []
     assert [h.id for h in vault.search_content("shared word")] == ["visible"]
+
     # Pure-Python path too (no ripgrep): force the fallback.
     def _no_binary(_name: str) -> None:
         return None

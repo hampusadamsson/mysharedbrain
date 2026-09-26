@@ -47,7 +47,7 @@ _KEEPERS_LOCK = threading.Lock()
 
 def _memory_uri(root: Path) -> str:
     """Shared-cache memory URI, one cache per vault root."""
-    digest = hashlib.sha1(str(root.resolve()).encode()).hexdigest()[:16]
+    digest = hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:16]
     return f"file:mysharedbrain-{digest}?mode=memory&cache=shared"
 
 
