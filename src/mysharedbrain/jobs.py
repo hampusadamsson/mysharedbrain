@@ -254,7 +254,9 @@ class JobScheduler:
         happens, and the run itself gets one summary entry tagged the same way.
         """
         job = self._job(job_id)
-        lib = Librarian(self.root, actor=LIBRARIAN_ACTOR)
+        lib = Librarian(
+            self.root, actor=LIBRARIAN_ACTOR, ignore=self.config.vault.ignore
+        )
         if job_id in self.running:
             log.warning("job %s: already running, skipping this trigger", job_id)
             run_id = self.store.start(job_id)

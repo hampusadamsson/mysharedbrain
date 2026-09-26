@@ -343,6 +343,34 @@ class AskConfig(BaseModel):
     then). Bounded so a typo cannot disable the guard or hang a request."""
 
 
+class VaultConfig(BaseModel):
+    """Vault ignore rules: paths the brain cannot see or touch.
+
+    Gitignore-style, blocklist only: full file names with the ``.md`` suffix
+    (``drafts/todo.md``), globs (``drafts/*``, ``projects/draft*``) and whole
+    directories with a trailing slash (``files/``). A note under a rule is
+    invisible (listings, search, backlinks skip it) and untouchable (reads
+    and writes raise :class:`InvalidNoteId`). ``.brain/`` is always ignored.
+    The vault's own ``.brainignore`` file adds more rules (union of both).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ignore: list[str] = Field(default_factory=list)
+    """Ignore patterns; empty = no rules. No ``!`` negation."""
+
+    @field_validator("ignore", mode="after")
+    @classmethod
+    def _check_ignore(cls, value: list[str]) -> list[str]:
+        cleaned = [p.strip() for p in value if p.strip()]
+        for pattern in cleaned:
+            if pattern.startswith("!"):
+                raise ValueError(
+                    f"negation is not supported (blocklist only): {pattern!r}"
+                )
+        return cleaned
+
+
 class SchedulerConfig(BaseModel):
     """How often the scheduler wakes to look for due jobs."""
 
@@ -508,6 +536,7 @@ class BrainConfigDocument(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     admin: AdminConfig = Field(default_factory=AdminConfig)
     ask: AskConfig = Field(default_factory=AskConfig)
+    vault: VaultConfig = Field(default_factory=VaultConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)

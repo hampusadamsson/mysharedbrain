@@ -80,6 +80,16 @@ ask:
   # then and reports the timeout.
   timeout_seconds: 60
 
+# Vault ignore rules: paths the brain cannot see or touch. Gitignore-style,
+# blocklist only (no `!` negation). Full file names with the `.md` suffix,
+# globs, or whole directories with a trailing slash. Ignored notes vanish
+# from listings and search, and reads/writes on them fail. `.brain/` is
+# always ignored. The vault's own `.brainignore` file (same syntax, `#`
+# comments) adds more rules — both lists apply. Env override takes JSON:
+# BRAIN__VAULT__IGNORE='["drafts/*"]'.
+vault:
+  ignore: [] # e.g. [drafts/*, scratch.md, archive/] — see comment above
+
 scheduler:
   # OFF by default: the jobs below are disabled too, so the librarian never acts
   # on the vault unprompted. Turn this on (and enable a job) when you are ready.

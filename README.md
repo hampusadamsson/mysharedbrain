@@ -169,11 +169,27 @@ servers are declared in the same file (`http`/`sse`, with `headers`, `enabled`
 and an `insecure` switch that skips TLS verification — only for a network you
 trust).
 
+Ignore rules hide vault paths from the brain. `vault.ignore` in the same file
+plus a `.brainignore` file at the vault root (same syntax, `#` comments) apply
+together. Gitignore-style, blocklist only (no `!` negation): full file names
+with the `.md` suffix, globs, or whole directories with a trailing slash:
+
+```yaml
+vault:
+  ignore: [drafts/*, scratch.md, archive/]
+```
+
+Ignored notes vanish from listings, search and backlinks, and any read or
+write on them fails naming the matching rule. `.brain/` is always ignored.
+
 ## Where things live
 
 The vault is `VAULT_DIR`: notes as `.md` files, and beside them
 `.brain/brain.db` (SQLite, WAL) holding the audit log, the capture queue, job
-runs and saved settings. Back the directory up and you have everything. Note ids
+runs and saved settings. If the database file cannot be opened (read-only
+filesystem, …), sidecar state falls back to process memory with a warning —
+survival, not storage: it dies on restart. Back the directory up and you have
+everything. Note ids
 are validated as paths and resolved, so a symlink inside the vault cannot reach
 outside it.
 

@@ -43,6 +43,24 @@ describe('the Pages view', () => {
 		expect(page.getByText('Select a page, or create one').elements()).toHaveLength(0);
 	});
 
+	it('toggles listing order between A–Z and Z–A', async () => {
+		respond({ folders: [], notes: ['b-note', 'a-note'] });
+
+		await render(Pages);
+
+		const links = () =>
+			page
+				.getByRole('link', { name: /-note/ })
+			.elements()
+			.map((el) => el.getAttribute('href'));
+		await expect.poll(links).toEqual(['/p/a-note', '/p/b-note']);
+		await expect.element(page.getByRole('button', { name: 'Sort Z to A' })).toBeVisible();
+
+		await page.getByRole('button', { name: 'Sort Z to A' }).click();
+		await expect.poll(links).toEqual(['/p/b-note', '/p/a-note']);
+		await expect.element(page.getByRole('button', { name: 'Sort A to Z' })).toBeVisible();
+	});
+
 	it('lists a note that is also a folder once, as the folder row', async () => {
 		respond({ folders: ['projects'], notes: ['projects', 'projects/homelab'] });
 

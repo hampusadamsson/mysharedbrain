@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
@@ -24,6 +25,7 @@ from mysharedbrain.capture import (
     Status,
     Verdict,
 )
+from mysharedbrain.config import load_config
 from mysharedbrain.protocols import AuditStore, CaptureStore
 from mysharedbrain.vault import (
     InvalidNoteId,
@@ -166,9 +168,11 @@ class Librarian:
     """Ask for information; an unanswered question is filed as an automated
     ``question`` capture entry for future action."""
 
-    def __init__(self, root: Path, actor: str = LIBRARIAN_ACTOR) -> None:
+    def __init__(
+        self, root: Path, actor: str = LIBRARIAN_ACTOR, ignore: Iterable[str] = ()
+    ) -> None:
         self.root = root
-        self.vault = Vault(root)
+        self.vault = Vault(root, ignore=ignore)
         self.audit: AuditStore = AuditLog(root)
         self.capture: CaptureStore = CaptureQueue(root)
         self.actor = actor
@@ -520,4 +524,4 @@ class Librarian:
 
 def librarian(actor: str = "api") -> Librarian:
     """Shared factory: both adapters (REST, MCP) build Librarians here."""
-    return Librarian(vault_root(), actor=actor)
+    return Librarian(vault_root(), actor=actor, ignore=load_config().vault.ignore)

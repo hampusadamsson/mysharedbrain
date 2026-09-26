@@ -12,11 +12,13 @@ only thing it can reach — enforced, not assumed.
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, cast
 
 import yaml
@@ -24,6 +26,9 @@ import yaml
 NOTE_SUFFIX = ".md"
 INTERNAL_DIRS = {".brain"}
 TRASH_DIR = Path(".brain/trash")
+BRAINIGNORE_FILE = ".brainignore"
+
+log = logging.getLogger(__name__)
 
 
 class VaultError(Exception):
@@ -105,15 +110,73 @@ def _validate(note_id: str) -> str:
     return "/".join(parts)
 
 
+def normalize_patterns(patterns: Iterable[str]) -> list[str]:
+    """Strip + drop empties. Shared by config lists and the ignore file."""
+    return [p for p in (str(p).strip() for p in patterns) if p]
+
+
+def load_brainignore(root: Path) -> list[str]:
+    """Patterns from ``<vault>/.brainignore`` (missing file = no rules).
+
+    One pattern per line, ``#`` comments and blanks skipped. ``!`` negation
+    is not supported (blocklist only) — such lines are skipped with a warning
+    instead of failing every vault operation.
+    """
+    path = root / BRAINIGNORE_FILE
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        log.warning("cannot read %s: %s", path, exc)
+        return []
+    kept = [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+    negated = [ln for ln in kept if ln.startswith("!")]
+    if negated:
+        log.warning("%s: negation (!) is not supported, skipping: %s", path, negated)
+    return [ln for ln in kept if not ln.startswith("!")]
+
+
+def pattern_matches(pattern: str, rel: str) -> bool:
+    """Does a gitignore-style pattern match a vault-relative file path?
+
+    ``rel`` always carries the ``.md`` suffix (``todo.md``, ``a/b.md``).
+    A trailing ``/`` matches a whole directory; otherwise :class:`PurePath`
+    matching applies (``*``, ``?``, ``[...]`` per segment, ``**`` across).
+    No negation — blocklist only.
+    """
+    if pattern.endswith("/"):
+        directory = pattern.rstrip("/")
+        return rel == directory or rel.startswith(directory + "/")
+    return PurePath(rel).match(pattern)
+
+
 class Vault:
     """CRUD + search over a directory of markdown files."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, ignore: Iterable[str] = ()) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+        # Union of config rules and the vault's own .brainignore file.
+        # Re-read per construction (a Vault lives as long as one request),
+        # so editing the file takes effect without a restart.
+        self._ignore = normalize_patterns(ignore) + load_brainignore(root)
+
+    def ignored_by(self, note_id: str) -> str | None:
+        """First matching ignore rule for a note id, or ``None``."""
+        rel = _validate(note_id) + NOTE_SUFFIX
+        for pattern in self._ignore:
+            if pattern_matches(pattern, rel):
+                return pattern
+        return None
 
     def _path(self, note_id: str) -> Path:
         rel = _validate(note_id)
+        if (rule := self.ignored_by(note_id)) is not None:
+            raise InvalidNoteId(
+                f"note {note_id!r} is ignored "
+                f"by vault ignore rule {rule!r}: un-ignore it to interact"
+            )
         return self._contained(self.root / (rel + NOTE_SUFFIX))
 
     def _trash_path(self, note_id: str) -> Path:
@@ -325,7 +388,9 @@ class Vault:
         ids = sorted(
             p.relative_to(self.root).as_posix()[: -len(NOTE_SUFFIX)]
             for p in self.root.rglob(f"*{NOTE_SUFFIX}")
-            if p.is_file() and not self._is_internal(p)
+            if p.is_file()
+            and not self._is_internal(p)
+            and not self._ignored_file(p.relative_to(self.root).as_posix())
         )
         if prefix:
             norm = prefix.strip().replace("\\", "/").rstrip("/")
@@ -350,10 +415,19 @@ class Vault:
                     continue
                 rel = child.relative_to(self.root).as_posix()
                 if child.is_dir():
+                    # A folder is hidden when its contents would be: probe it.
+                    if self._ignored_file(rel + "/.ignore-probe" + NOTE_SUFFIX):
+                        continue
                     folders.append(rel)
                 elif child.suffix == NOTE_SUFFIX:
+                    if self._ignored_file(rel):
+                        continue
                     notes.append(rel[: -len(NOTE_SUFFIX)])
         return {"folders": folders, "notes": notes}
+
+    def _ignored_file(self, rel: str) -> bool:
+        """Match a vault-relative file path (with suffix) against the rules."""
+        return any(pattern_matches(p, rel) for p in self._ignore)
 
     def _is_internal(self, path: Path) -> bool:
         return any(
@@ -381,18 +455,35 @@ class Vault:
                 pass
         return self._search_fallback(needle, limit + offset)[offset:]
 
+    def _ignore_globs(self) -> list[str]:
+        """Ignore rules as ripgrep ``--glob`` exclusions (prefilter; the
+        post-filter below stays authoritative, so glob dialect differences
+        cannot leak an ignored note)."""
+        globs: list[str] = []
+        for pattern in self._ignore:
+            if pattern.endswith("/"):
+                globs.append(pattern + "**")
+            else:
+                globs.append(pattern)
+        return globs
+
     def _search_ripgrep(self, query: str, limit: int) -> list[SearchHit]:
+        args = [
+            "rg",
+            "--no-heading",
+            "--line-number",
+            "--max-count",
+            "3",
+            "--glob",
+            "*.md",
+            "--glob",
+            "!.brain/**",
+        ]
+        for glob in self._ignore_globs():
+            args += ["--glob", "!" + glob]
         proc = subprocess.run(
             [
-                "rg",
-                "--no-heading",
-                "--line-number",
-                "--max-count",
-                "3",
-                "--glob",
-                "*.md",
-                "--glob",
-                "!.brain/**",
+                *args,
                 "--",
                 query,
                 ".",
@@ -411,7 +502,10 @@ class Vault:
             file_path = self.root / match.group(1)
             if file_path.suffix != NOTE_SUFFIX or self._is_internal(file_path):
                 continue
-            note_id = file_path.relative_to(self.root).as_posix()[: -len(NOTE_SUFFIX)]
+            rel = file_path.relative_to(self.root).as_posix()
+            if self._ignored_file(rel):
+                continue
+            note_id = rel[: -len(NOTE_SUFFIX)]
             hits.setdefault(note_id, []).append(match.group(3).strip()[:200])
             if len(hits) >= limit:
                 break

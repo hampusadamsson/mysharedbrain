@@ -15,6 +15,7 @@ from mysharedbrain.config import (
     BrainConfig,
     BrainConfigDocument,
     JobSpec,
+    VaultConfig,
     export_config_yaml,
     load_config,
     parse_config,
@@ -173,6 +174,27 @@ def test_example_file_documents_the_ask_defaults(
         pytest.skip("brain.example.yaml not present")
     monkeypatch.setenv("BRAIN_CONFIG", str(example))
     assert load_config().ask == BrainConfig().ask
+
+
+def test_example_file_documents_the_vault_defaults(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    example = Path(__file__).resolve().parents[2] / "brain.example.yaml"
+    if not example.is_file():  # pragma: no cover - example lives at repo root
+        pytest.skip("brain.example.yaml not present")
+    monkeypatch.setenv("BRAIN_CONFIG", str(example))
+    assert load_config().vault == BrainConfig().vault
+
+
+def test_yaml_file_loads_the_vault_section(config_file: Path) -> None:
+    """Ignore rules come from YAML (or the environment), not UI-only."""
+    config_file.write_text(
+        yaml.safe_dump({"vault": {"ignore": ["secret.md", "drafts/*"]}}),
+        encoding="utf-8",
+    )
+    assert load_config().vault.ignore == ["secret.md", "drafts/*"]
+    with pytest.raises(ValidationError, match="negation"):
+        VaultConfig(ignore=["!keep.md"])
 
 
 def test_yaml_file_loads_the_ask_section(config_file: Path) -> None:

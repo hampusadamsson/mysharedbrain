@@ -12,8 +12,11 @@ all three live under ``.brain/`` and are never notes.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import logging
 import os
 import sqlite3
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -21,6 +24,8 @@ from pathlib import Path
 
 DB_FILE = Path(".brain/brain.db")
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -36,22 +41,78 @@ def vault_root() -> Path:
     return Path(os.environ.get("VAULT_DIR", "vault")).resolve()
 
 
+_KEEPERS: dict[str, sqlite3.Connection] = {}
+_KEEPERS_LOCK = threading.Lock()
+
+
+def _memory_uri(root: Path) -> str:
+    """Shared-cache memory URI, one cache per vault root."""
+    digest = hashlib.sha1(str(root.resolve()).encode()).hexdigest()[:16]
+    return f"file:mysharedbrain-{digest}?mode=memory&cache=shared"
+
+
 class Database:
     """Handle to one vault's database file. Migrates on every connect.
 
     Connections are cheap and short-lived: open, use, close. This keeps the
     service layer free of connection lifecycle and safe under threads.
+
+    When the file database cannot be opened (read-only filesystem, a file
+    blocking ``.brain/``, …) every operation falls back to a shared
+    in-memory database instead of failing. The fallback is loud (a warning)
+    and pinned: once engaged it stays for the process, so state never splits
+    between disk and memory. Memory state dies with the process — this is a
+    survival path for sidecar state (audit, capture, settings), not storage.
     """
 
     def __init__(self, root: Path) -> None:
+        self.root = root
         self.path = root / DB_FILE
+        self._memory = False
+
+    @property
+    def in_memory(self) -> bool:
+        """Has this handle pinned to the memory fallback?"""
+        return self._memory
 
     def connect(self) -> sqlite3.Connection:
         """Open a tuned connection and bring the schema up to date."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, isolation_level=None)
+        if self._memory:
+            return self._mem_connect()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self.path, isolation_level=None)
+        except (OSError, sqlite3.Error) as exc:
+            log.warning(
+                "database %s unavailable (%s): using in-memory state, lost on restart",
+                self.path,
+                exc,
+            )
+            self._memory = True
+            return self._mem_connect()
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        migrate(conn)
+        return conn
+
+    def _mem_connect(self) -> sqlite3.Connection:
+        """A connection into this vault's shared memory cache.
+
+        ``:memory:`` dies with its connection, so a process-wide keeper per
+        vault root holds the shared cache open; per-operation connections
+        come and go like the file ones. (WAL is a no-op on memory tables —
+        the pragma just reports back ``memory``.)
+        """
+        uri = _memory_uri(self.root)
+        with _KEEPERS_LOCK:
+            keeper = _KEEPERS.get(uri)
+            if keeper is None:
+                keeper = sqlite3.connect(uri, uri=True, isolation_level=None)
+                _KEEPERS[uri] = keeper
+        conn = sqlite3.connect(uri, uri=True, isolation_level=None)
+        conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
         migrate(conn)
