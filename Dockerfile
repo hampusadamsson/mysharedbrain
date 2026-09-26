@@ -2,7 +2,7 @@
 # The backend serves the built UI (./static) and the API from one image.
 
 # Stage 1: build the UI (SvelteKit adapter-static → /app/frontend/build)
-FROM node:25-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 
 RUN npm install -g pnpm@9
 
