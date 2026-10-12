@@ -15,7 +15,7 @@ COPY frontend/ ./
 RUN pnpm build
 
 # Stage 2: install backend dependencies
-FROM python:3.13-slim AS backend-builder
+FROM python:3.14-slim AS backend-builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.7.8 /uv /usr/local/bin/uv
 
@@ -26,7 +26,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 # Stage 3: runtime
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
